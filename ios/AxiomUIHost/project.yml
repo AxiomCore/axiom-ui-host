@@ -1,0 +1,28 @@
+name: AxiomUIHost
+options:
+  bundleIdPrefix: dev.axiomcore
+targets:
+  AxiomUIHost:
+    type: application
+    platform: iOS
+    deploymentTarget: '15.0'
+    sources:
+      - path: AxiomAppDelegate.m
+      - path: AxiomBundleProvider.m
+      - path: AxiomHostViewController.m
+      - path: main.m
+      - path: AxiomRuntime
+        excludes: [libaxiom_runtime.a]
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: dev.axiomcore.uihost
+        INFOPLIST_FILE: Info.plist
+        SWIFT_VERSION: '5.0'
+        # The Rust FFI archive is staged next to the copied bridge sources.
+        # Keep inherited flags so the CocoaPods xcconfig remains in effect.
+        LIBRARY_SEARCH_PATHS:
+          - '$(inherited)'
+          - '$(SRCROOT)/AxiomRuntime'
+        OTHER_LDFLAGS:
+          - '$(inherited)'
+          - '-laxiom_runtime'

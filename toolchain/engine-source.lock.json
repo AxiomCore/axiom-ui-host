@@ -1,0 +1,17 @@
+{
+  "format": "axiom-ui-host-engine-lock/v1",
+  "engine": {
+    "name": "Lynx",
+    "source": "https://github.com/lynx-family/lynx.git",
+    "commit": "73bf89185547d0caf725bab4f3a46fa1e1f9616d"
+  },
+  "runtime": {
+    "path": "../axiom-runtime",
+    "crate": "axiom-runtime"
+  },
+  "policy": {
+    "allowThirdPartyPrebuiltHostBinaries": false,
+    "workspaceGeneratedSource": false,
+    "releaseAssetOwner": "AxiomCore"
+  }
+}

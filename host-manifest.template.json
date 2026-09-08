@@ -1,0 +1,11 @@
+{
+  "format": "axiom-ui-host-release/v1",
+  "version": "REPLACE_AT_PACKAGE_TIME",
+  "generatedAt": "REPLACE_AT_PACKAGE_TIME",
+  "engine": {
+    "name": "Lynx",
+    "commit": "73bf89185547d0caf725bab4f3a46fa1e1f9616d"
+  },
+  "runtime": { "revision": "REPLACE_AT_PACKAGE_TIME" },
+  "assets": []
+}

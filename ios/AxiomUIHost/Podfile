@@ -1,0 +1,15 @@
+platform :ios, '15.0'
+use_frameworks! :linkage => :static
+
+target 'AxiomUIHost' do
+  # The build script stages the pinned engine at ../engine. This is source
+  # input; Axiom never obtains a renderer prebuilt host binary or an engine
+  # support pod from the public CocoaPods registry.
+  pod 'Lynx', :path => '../engine', :subspecs => ['Framework']
+  pod 'LynxBase', :path => '../engine', :subspecs => ['Framework']
+  pod 'LynxServiceAPI', :path => '../engine'
+  # This pinned engine revision declares PrimJS 4.2.0-alpha.0, while the
+  # source checkout's development podspec advertises a newer incompatible
+  # version. Let Lynx resolve its declared source pod until PrimJS is vendored
+  # and locked as a first-party Axiom source mirror.
+end
