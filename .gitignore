@@ -3,3 +3,5 @@ dist/
 *.xcarchive
 *.ipa
 *.apk
+.DS_Store
+.infisical.json
