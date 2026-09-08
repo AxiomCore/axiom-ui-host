@@ -34,9 +34,16 @@ if gh release view "$tag" --repo AxiomCore/axiom-ui-host >/dev/null 2>&1; then
 fi
 
 if [[ "$mode" == initial ]]; then
+  # Source is normally pushed before the first release so reviewers can audit
+  # exactly what an asset came from. Allow that normal sequence, but require
+  # the remote source commit to be identical to this clean checkout.
   if git -C "$host_dir" ls-remote --exit-code --heads origin main >/dev/null 2>&1; then
-    die "origin/main already exists; use 'just release-update $version' for later releases"
+    remote_main="$(git -C "$host_dir" ls-remote --heads origin main | awk '{print $1}')"
+    local_head="$(git -C "$host_dir" rev-parse HEAD)"
+    [[ "$remote_main" == "$local_head" ]] || die "origin/main does not match HEAD; pull/rebase or push the reviewed source before its first release"
   fi
+  existing_release="$(gh release list --repo AxiomCore/axiom-ui-host --limit 1 2>/dev/null || true)"
+  [[ -z "$existing_release" ]] || die "a GitHub Release already exists; use 'just release-update $version' for later releases"
 else
   git -C "$host_dir" fetch --quiet origin main || die "cannot fetch origin/main; the first source publication must use 'just release-initial <version>'"
 fi

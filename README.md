@@ -82,7 +82,8 @@ cache.
 
 `dist/` is a release attachment directory, never a Git input. Initialize this
 directory as the separate `AxiomCore/axiom-ui-host` repository and push a clean
-`main` commit before its first publication. Then run:
+`main` commit before its first publication. `release-initial` accepts that
+already-pushed source commit as long as no GitHub Release exists yet. Then run:
 
 ```sh
 just release-initial 0.1.0
