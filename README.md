@@ -46,17 +46,25 @@ application from an upstream sample host. Build products are written under
 `AXIOM_UI_HOST_BUILD_ROOT` (or the user cache); no command writes generated
 source into an Acore app or this repository.
 
-For a locally produced release, connect it to the Axiom CLI:
+To install the latest published release through the Axiom CLI:
 
 ```sh
-axiom ui host install --target ios --release-manifest axiom-ui-host/dist/host-manifest.json
+axiom ui host install --target ios
 axiom ui host status --target ios
 axiom run app/main.acore --target ios
 ```
 
-The normal `axiom run` flow asks to install a missing **UI Host** and asks for
-the release manifest when needed. CI should use `--non-interactive` together
-with `--release-manifest`.
+The normal `axiom run` flow asks to install a missing **UI Host**, downloads the
+latest Axiom-owned release automatically, verifies its signed manifest and
+artifact checksum, then installs only the matching target asset. CI can use
+`--non-interactive`; `--release-manifest` remains available for an explicitly
+supplied local release.
+
+The GitHub repository and release assets used by normal CLI users must be
+publicly downloadable. A private GitHub release works only for an authenticated
+maintainer and cannot distribute to end users; never embed a GitHub token in the
+CLI. If the host must remain private, publish its signed assets through an
+Axiom-controlled public distribution endpoint instead.
 
 ## Release contract
 

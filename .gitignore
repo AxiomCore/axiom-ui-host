@@ -5,3 +5,6 @@ dist/
 *.apk
 .DS_Store
 .infisical.json
+# Default local output from scripts/provision-release-secrets.sh. It contains
+# release signing and Android keystore credentials and must never be staged.
+axiom-ui-host-release-secrets.env
