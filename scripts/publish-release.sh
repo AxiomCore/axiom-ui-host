@@ -15,8 +15,27 @@ if [[ "$mode" == update && -z "${AXIOM_UI_HOST_BUILD_ROOT:-}" && -f "$release_bu
   release_build_root="$(sed -n '/^[[:space:]]*#/d; /^[[:space:]]*$/d; {p; q;}' "$release_build_root_config")"
   [[ "$release_build_root" == /* ]] || die "release build-root config must contain one absolute path: $release_build_root_config"
   release_build_root_parent="$(dirname "$release_build_root")"
+
+  # A macOS APFS sparse image can live on a portable ExFAT SSD while retaining
+  # the filesystem semantics required by the NDK linker. If configured, mount
+  # it automatically before testing the release build root.
+  release_build_image_config="${AXIOM_UI_HOST_RELEASE_BUILD_IMAGE_CONFIG:-$(dirname "$release_build_root_config")/release-build-image}"
+  if [[ ! -d "$release_build_root_parent" && -f "$release_build_image_config" ]]; then
+    release_build_image="$(sed -n '/^[[:space:]]*#/d; /^[[:space:]]*$/d; {p; q;}' "$release_build_image_config")"
+    # Sparse bundles are directories; regular disk images are files.
+    [[ -e "$release_build_image" ]] || die "configured release build image does not exist: $release_build_image"
+    need hdiutil
+    printf '%s\n' "axiom-ui-host: mounting configured APFS release build volume."
+    # macOS owns /Volumes, so let DiskImages create the mount point from the
+    # APFS image's volume label rather than attempting to create it directly.
+    hdiutil attach -nobrowse "$release_build_image" >/dev/null || \
+      die "could not mount configured release build image: $release_build_image"
+  fi
   [[ -d "$release_build_root_parent" && -w "$release_build_root_parent" ]] || \
     die "configured release build-root is unavailable or not writable: $release_build_root (connect the external volume or set AXIOM_UI_HOST_BUILD_ROOT)"
+  release_build_filesystem="$(diskutil info -plist "$release_build_root_parent" 2>/dev/null | plutil -extract FilesystemName raw - 2>/dev/null || true)"
+  [[ "$release_build_filesystem" != ExFAT ]] || \
+    die "configured release build-root is on ExFAT. Android NDK lld can write zero-filled .so files there; use an APFS-formatted volume or configure an APFS sparse image on the SSD"
   export AXIOM_UI_HOST_BUILD_ROOT="$release_build_root"
   printf '%s\n' "axiom-ui-host: using configured external release build cache: $AXIOM_UI_HOST_BUILD_ROOT"
 fi

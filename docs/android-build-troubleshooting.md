@@ -202,16 +202,37 @@ local configuration file when `AXIOM_UI_HOST_BUILD_ROOT` is not already set:
 ~/.config/axiom-ui-host/release-build-root
 ```
 
-For example:
+For example, use an APFS-mounted build volume:
 
 ```text
-/Volumes/ExternalSSD/axiom-ui-host-build
+/Volumes/AxiomHostBuild/axiom-ui-host-build
 ```
 
-The external volume must be mounted and writable. This setting applies only to
-release updates on that machine; ordinary developer builds and CI retain their
-normal cache locations. To override it for a single invocation, set
-`AXIOM_UI_HOST_BUILD_ROOT` explicitly.
+The build root must not be on ExFAT. Android NDK r21 `lld` can create
+zero-filled shared objects on ExFAT, which later appear as
+`ld.lld: error: ... liblynxbase.so: unknown file type` while dependent modules
+link. Use an APFS-formatted external volume, or safely create an APFS sparse
+image stored on the ExFAT SSD:
+
+```sh
+hdiutil create -size 100g -type SPARSEBUNDLE -fs APFS -volname AxiomHostBuild \
+  /Volumes/ExternalSSD/AxiomHostBuild.sparsebundle
+```
+
+Create this adjacent local configuration file so `release-update` mounts the
+image automatically when necessary:
+
+```text
+~/.config/axiom-ui-host/release-build-image
+```
+
+```text
+/Volumes/ExternalSSD/AxiomHostBuild.sparsebundle
+```
+
+This setting applies only to release updates on that machine; ordinary
+developer builds and CI retain their normal cache locations. To override it
+for a single invocation, set `AXIOM_UI_HOST_BUILD_ROOT` explicitly.
 
 ## Triage order on another machine
 

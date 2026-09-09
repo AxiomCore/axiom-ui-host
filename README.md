@@ -84,9 +84,11 @@ command writes generated source into an Acore app or this repository.
 For a maintainer who releases from external storage, `just release-update`
 can load a local, untracked cache location from
 `~/.config/axiom-ui-host/release-build-root`. Put one absolute path in that
-file, such as `/Volumes/ExternalSSD/axiom-ui-host-build`. This affects only
-release updates on that machine; an explicitly set `AXIOM_UI_HOST_BUILD_ROOT`
-still takes precedence.
+file. The Android NDK linker cannot build on ExFAT: use an APFS-formatted
+volume, or an APFS sparse image stored on the external SSD. A companion
+`release-build-image` file can name that image and it will be mounted on demand.
+This affects only release updates on that machine; an explicitly set
+`AXIOM_UI_HOST_BUILD_ROOT` still takes precedence.
 
 To install the latest published release through the Axiom CLI:
 
