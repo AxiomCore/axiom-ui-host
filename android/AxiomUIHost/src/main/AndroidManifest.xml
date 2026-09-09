@@ -2,7 +2,7 @@
     package="dev.axiomcore.uihost">
     <uses-permission android:name="android.permission.INTERNET" />
     <application
-        android:name=".AxiomHostApplication"
+        android:name="com.axiom.uihost.AxiomHostApplication"
         android:allowBackup="false"
         android:label="Axiom UI Host"
         android:theme="@style/AxiomHostTheme"
@@ -12,7 +12,7 @@
         <meta-data android:name="AxiomRuntimeModuleVersion" android:value="1" />
         <meta-data android:name="AxiomRuntimeFacadeProtocolVersion" android:value="1" />
         <activity
-            android:name=".AxiomHostActivity"
+            android:name="com.axiom.uihost.AxiomHostActivity"
             android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"
             android:exported="true">
             <intent-filter>
