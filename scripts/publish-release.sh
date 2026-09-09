@@ -48,10 +48,11 @@ else
   git -C "$host_dir" fetch --quiet origin main || die "cannot fetch origin/main; the first source publication must use 'just release-initial <version>'"
 fi
 
-printf '%s\n' "axiom-ui-host: validating source and building the iOS Simulator host for release $tag."
+printf '%s\n' "axiom-ui-host: validating source and building the iOS and Android development hosts for release $tag."
 "$host_dir/scripts/check.sh"
 "$host_dir/tests/validate-host.sh"
 "$host_dir/scripts/build-ios.sh" simulator
+"$host_dir/scripts/build-android.sh" release
 
 # Build output is confined to the opaque host cache. The source tree was
 # checked clean before the build, and must still be clean when we publish it.

@@ -21,11 +21,11 @@ just check
 just ios-runtime
 just ios-simulator
 just android-debug
-just package version=0.1.0
+just android-emulator
+just package version=0.3.0
 just verify manifest=dist/host-manifest.json
-just release-dry-run version=0.1.0
-just release-initial 0.1.0
-just release-update 0.1.1
+just release-dry-run version=0.3.0
+just release-update 0.3.0
 ```
 
 `ios-simulator` needs Xcode, CocoaPods, XcodeGen, Rust iOS targets, an iOS
@@ -40,18 +40,26 @@ opaque host cache. `Lynx`, `LynxBase`, and `LynxServiceAPI` resolve from that
 staged source tree, not the CocoaPods registry. The current pinned engine
 still declares PrimJS as an upstream source pod; mirroring and locking that
 source is a remaining release-hardening item.
-`android-debug` is intentionally gated until Axiom's own Android application
-and typed request/response JNI bridge are implemented. It never derives an
-application from an upstream sample host. Build products are written under
-`AXIOM_UI_HOST_BUILD_ROOT` (or the user cache); no command writes generated
-source into an Acore app or this repository.
+`android-emulator` builds the signed Axiom-owned **development host** APK used
+by `axiom run --target android`; `android-debug` is the unsigned local build.
+Both require Android SDK, NDK, `cargo-ndk`, Java, and the pinned engine source.
+Set `ANDROID_HOME` and `ANDROID_NDK_HOME` (or their `*_ROOT` equivalents).
+The release build takes the Android keystore only from the four
+`AXIOM_UI_HOST_ANDROID_*` variables and decodes it only into the opaque host
+cache. It never derives an application from an upstream sample host. Build
+products are written under `AXIOM_UI_HOST_BUILD_ROOT` (or the user cache); no
+command writes generated source into an Acore app or this repository.
 
 To install the latest published release through the Axiom CLI:
 
 ```sh
 axiom ui host install --target ios
 axiom ui host status --target ios
+axiom ui host recover --target ios
 axiom run app/main.acore --target ios
+axiom ui host install --target android
+axiom ui host status --target android
+axiom run app/main.acore --target android
 ```
 
 The normal `axiom run` flow asks to install a missing **UI Host**, downloads the
@@ -59,6 +67,26 @@ latest Axiom-owned release automatically, verifies its signed manifest and
 artifact checksum, then installs only the matching target asset. CI can use
 `--non-interactive`; `--release-manifest` remains available for an explicitly
 supplied local release.
+
+Release `0.3.0` introduces delivery protocol v2. A compatible Acore edit may
+request state-preserving patch delivery, but the host must acknowledge the
+result explicitly. The current pinned renderer transport safely returns an
+explained state-reset fallback while it reloads the template inside the
+existing app process; it does not claim that page state was retained. Run
+`axiom ui host recover --target ios` only when a development acknowledgement is
+stuck: it restarts the host and clears its two disposable control records, not
+verified archives, last-good bundle, or application source.
+
+Android has the same fixed `bundle` / `revision` / `ack` v2 protocol under the
+host's app-private `files/axiom-ui-host` directory. The CLI selects a running
+Android Emulator, installs the verified APK when needed, and transfers those
+fixed files with `adb run-as`; it does not open the host sandbox to a source
+path or network URL. Set `AXIOM_UI_ANDROID_DEVICE_SERIAL` to select a specific
+authorized development device. The current Android host stays open but
+truthfully reports a full-template state reset. Its renderer callback is
+single-use, so streaming/event-channel parity and physical-device evidence are
+still explicit Phase 5E gates. `axiom ui host recover --target android` clears
+only its stale control records and relaunches that development host.
 
 The GitHub repository and release assets used by normal CLI users must be
 publicly downloadable. A private GitHub release works only for an authenticated
@@ -86,6 +114,14 @@ release, and publish only after `just verify` succeeds. The CLI verifies the
 manifest signature and archive hash before recording the host in its opaque
 cache.
 
+For GitHub Actions, synchronize the existing Infisical production values to
+repository secrets (or replace that source with an approved Infisical CI
+identity): `AXIOM_UI_HOST_SIGNING_PRIVATE_KEY_HEX`,
+`AXIOM_UI_HOST_SIGNING_PUBLIC_KEY_HEX`, and all four
+`AXIOM_UI_HOST_ANDROID_*` keystore values. The workflow never prints them or
+uploads the decoded keystore. Its runtime revision is an explicit reviewed pin
+in `.github/workflows/release.yml`; update it only with matching ABI evidence.
+
 ### Publishing source and release assets
 
 `dist/` is a release attachment directory, never a Git input. Initialize this
@@ -97,12 +133,12 @@ already-pushed source commit as long as no GitHub Release exists yet. Then run:
 just release-initial 0.1.0
 ```
 
-It loads the signing key only through `infisical run --env=prod`, validates and
-builds the iOS Simulator host, pushes the source commit to `main`, and creates
+It loads signing material only through `infisical run --env=prod`, validates and
+builds the iOS Simulator and signed Android Emulator development hosts, pushes the source commit to `main`, and creates
 the signed immutable GitHub Release `v0.1.0`. Later releases use a new version:
 
 ```sh
-just release-update 0.1.1
+just release-update 0.3.0
 ```
 
 Both commands reject a dirty source tree, an incorrect remote, or an existing
@@ -126,7 +162,10 @@ routing metadata, so the scripts do not load it from Infisical.
 
 ## Current release gate
 
-The iOS simulator host is the first release channel. It remains a development
-host until a device/simulator launch smoke test and the Axiom UI bundle-delivery
-adapter are enabled. Android is not releasable yet: the command deliberately
-does not emit an APK until its callback bridge is completed and tested.
+The iOS Simulator and Android Emulator artifacts are development-host release
+channels, never end-user application packages. Both are retrieved only from an
+Axiom-signed GitHub release. The Android artifact is intentionally debuggable
+so `adb run-as` can preserve the app-private delivery boundary; do not ship it
+to users or treat it as a production Android app. Android contract-dispatch
+event parity, emulator E2E, and physical-device smoke evidence remain open and
+are tracked in the Phase 5E document.

@@ -3,58 +3,105 @@ name: release-ui-host
 on:
   workflow_dispatch:
     inputs:
-      version:
-        description: Axiom UI Host version (without v)
-        required: true
-        type: string
-      publish:
-        description: Publish the GitHub release after checks
-        required: true
-        default: false
-        type: boolean
+      version: { description: Axiom UI Host version without v, required: true, type: string }
+      publish: { description: Publish immutable release after verification, required: true, default: false, type: boolean }
   push:
-    tags:
-      - 'v*'
+    tags: ['v*']
 
 permissions:
   contents: write
 
+env:
+  RUNTIME_REPOSITORY: AxiomCore/axiom-runtime
+  # Review this ABI-v1 runtime pin together with every host ABI change.
+  RUNTIME_COMMIT: 9cf8fef0052f183d28eaf51659cdf6a9ce359d57
+
 jobs:
   ios-simulator:
     runs-on: macos-14
-    env:
-      AXIOM_UI_HOST_ENGINE_SOURCE: ${{ github.workspace }}/engine
     steps:
       - uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
-      - name: Check out pinned renderer source
+        with: { path: axiom-ui-host, fetch-depth: 0 }
+      - name: Check out reviewed runtime and pinned renderer
         run: |
-          commit=$(python3 -c 'import json; print(json.load(open("toolchain/engine-source.lock.json"))["engine"]["commit"])')
+          git clone https://github.com/${RUNTIME_REPOSITORY}.git axiom-runtime
+          git -C axiom-runtime checkout --detach "$RUNTIME_COMMIT"
+          test "$(git -C axiom-runtime rev-parse HEAD)" = "$RUNTIME_COMMIT"
+          commit=$(python3 -c 'import json; print(json.load(open("axiom-ui-host/toolchain/engine-source.lock.json"))["engine"]["commit"])')
           git clone https://github.com/lynx-family/lynx.git engine
           git -C engine checkout --detach "$commit"
-          test "$(git -C engine rev-parse HEAD)" = "$commit"
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: aarch64-apple-ios-sim
-      - name: Install host build prerequisites
-        run: brew install cocoapods just
-      - name: Validate host source
-        run: just check
+        with: { targets: aarch64-apple-ios-sim }
+      - name: Install prerequisites and validate source
+        working-directory: axiom-ui-host
+        run: brew install cocoapods just xcodegen && just check
       - name: Build iOS simulator host
+        working-directory: axiom-ui-host
+        env: { AXIOM_UI_HOST_ENGINE_SOURCE: ${{ github.workspace }}/engine }
         run: just ios-simulator
-      - name: Package and verify release
+      - uses: actions/upload-artifact@v4
+        with: { name: ios-host, path: ~/.cache/axiom-ui-host/output/axiom-ui-host-ios-simulator.app.zip }
+
+  android-emulator:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: axiom-ui-host, fetch-depth: 0 }
+      - name: Check out reviewed runtime and pinned renderer
+        run: |
+          git clone https://github.com/${RUNTIME_REPOSITORY}.git axiom-runtime
+          git -C axiom-runtime checkout --detach "$RUNTIME_COMMIT"
+          test "$(git -C axiom-runtime rev-parse HEAD)" = "$RUNTIME_COMMIT"
+          commit=$(python3 -c 'import json; print(json.load(open("axiom-ui-host/toolchain/engine-source.lock.json"))["engine"]["commit"])')
+          git clone https://github.com/lynx-family/lynx.git engine
+          git -C engine checkout --detach "$commit"
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: aarch64-linux-android, x86_64-linux-android }
+      - uses: android-actions/setup-android@v3
+      - name: Install Android build prerequisites
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build
+          sdkmanager --install "platform-tools" "platforms;android-35" "build-tools;35.0.0" "ndk;27.1.12297006"
+          cargo install cargo-ndk --locked
+      - name: Build signed Android emulator development host
+        working-directory: axiom-ui-host
+        env:
+          AXIOM_UI_HOST_ENGINE_SOURCE: ${{ github.workspace }}/engine
+          AXIOM_UI_HOST_ANDROID_KEYSTORE_BASE64: ${{ secrets.AXIOM_UI_HOST_ANDROID_KEYSTORE_BASE64 }}
+          AXIOM_UI_HOST_ANDROID_KEY_ALIAS: ${{ secrets.AXIOM_UI_HOST_ANDROID_KEY_ALIAS }}
+          AXIOM_UI_HOST_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.AXIOM_UI_HOST_ANDROID_KEYSTORE_PASSWORD }}
+          AXIOM_UI_HOST_ANDROID_KEY_PASSWORD: ${{ secrets.AXIOM_UI_HOST_ANDROID_KEY_PASSWORD }}
+        run: |
+          export ANDROID_NDK_HOME="${ANDROID_HOME:?}/ndk/27.1.12297006"
+          ./scripts/build-android.sh release
+      - uses: actions/upload-artifact@v4
+        with: { name: android-host, path: ~/.cache/axiom-ui-host/output/axiom-ui-host-android-emulator.apk }
+
+  release:
+    needs: [ios-simulator, android-emulator]
+    runs-on: ubuntu-24.04
+    if: github.event_name == 'push' || inputs.publish
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: axiom-ui-host, fetch-depth: 0 }
+      - name: Check out reviewed runtime revision
+        run: |
+          git clone https://github.com/${RUNTIME_REPOSITORY}.git axiom-runtime
+          git -C axiom-runtime checkout --detach "$RUNTIME_COMMIT"
+      - uses: actions/download-artifact@v4
+        with: { path: artifacts }
+      - name: Package, sign, verify, and publish immutable release
+        working-directory: axiom-ui-host
         env:
           VERSION: ${{ inputs.version || github.ref_name }}
+          AXIOM_UI_HOST_SIGNING_PRIVATE_KEY_HEX: ${{ secrets.AXIOM_UI_HOST_SIGNING_PRIVATE_KEY_HEX }}
+          AXIOM_UI_HOST_SIGNING_PUBLIC_KEY_HEX: ${{ secrets.AXIOM_UI_HOST_SIGNING_PUBLIC_KEY_HEX }}
+          AXIOM_UI_HOST_BUILD_ROOT: ${{ runner.temp }}/axiom-ui-host-build
+          GH_TOKEN: ${{ github.token }}
         run: |
           version="${VERSION#v}"
-          just package "$version"
-          just verify dist/host-manifest.json
-      - name: Upload candidate artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: axiom-ui-host
-          path: dist/
-      # Publishing requires a CI-managed detached signing key. Configure the
-      # repository secret and enable this step only after signature verification
-      # is enforced by the CLI installer.
+          mkdir -p "$AXIOM_UI_HOST_BUILD_ROOT/output"
+          cp "$GITHUB_WORKSPACE"/artifacts/ios-host/axiom-ui-host-ios-simulator.app.zip "$AXIOM_UI_HOST_BUILD_ROOT/output/"
+          cp "$GITHUB_WORKSPACE"/artifacts/android-host/axiom-ui-host-android-emulator.apk "$AXIOM_UI_HOST_BUILD_ROOT/output/"
+          ./scripts/release.sh "$version"

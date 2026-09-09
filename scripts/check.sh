@@ -16,7 +16,11 @@ for required in \
   "$host_dir/ios/bridge/AxiomRuntimeModule.h" \
   "$host_dir/ios/bridge/AxiomRuntimeModule.m" \
   "$host_dir/ios/bridge/host-registration.m" \
-  "$host_dir/android/bridge/AxiomRuntimeModule.java"; do
+  "$host_dir/android/bridge/AxiomRuntimeModule.java" \
+  "$host_dir/android/bridge/AxiomRuntimeJni.cpp" \
+  "$host_dir/android/bridge/CMakeLists.txt" \
+  "$host_dir/android/AxiomUIHost/build.gradle" \
+  "$host_dir/android/AxiomUIHost/src/main/AndroidManifest.xml"; do
   [[ -f "$required" ]] || die "missing required bridge file: $required"
 done
 if find "$host_dir" -type d \( -name node_modules -o -path '*/research/lynx/*' \) -print -quit | grep -q .; then

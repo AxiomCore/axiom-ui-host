@@ -18,15 +18,18 @@
   return [root URLByAppendingPathComponent:@"AxiomUIHost" isDirectory:YES];
 }
 
-- (void)writeAcknowledgementForRevision:(NSDictionary *)revision status:(NSString *)status {
+- (void)writeAcknowledgementForRevision:(NSDictionary *)revision
+                                  status:(NSString *)status
+                                  reason:(NSString *)reason {
   NSNumber *sequence = revision[@"sequence"];
   NSString *graphRevision = revision[@"graphRevision"];
   if (![sequence isKindOfClass:NSNumber.class] || ![graphRevision isKindOfClass:NSString.class]) return;
   NSDictionary *ack = @{
-    @"format": @"axiom-ui-host-ack/v1",
+    @"format": @"axiom-ui-host-ack/v2",
     @"sequence": sequence,
     @"graphRevision": graphRevision,
     @"status": status,
+    @"reason": reason ?: @"",
   };
   NSError *error = nil;
   NSData *data = [NSJSONSerialization dataWithJSONObject:ack options:0 error:&error];
@@ -52,17 +55,39 @@
   id parsed = [NSJSONSerialization JSONObjectWithData:data options:0 error:nil];
   if (![parsed isKindOfClass:NSDictionary.class]) return;
   NSDictionary *revision = (NSDictionary *)parsed;
-  if (![revision[@"format"] isEqual:@"axiom-ui-host-revision/v1"] ||
+  if (![revision[@"format"] isEqual:@"axiom-ui-host-revision/v2"] ||
       ![revision[@"graphRevision"] isKindOfClass:NSString.class] ||
-      ![revision[@"sequence"] isKindOfClass:NSNumber.class]) return;
+      ![revision[@"sequence"] isKindOfClass:NSNumber.class] ||
+      ![revision[@"deliveryMode"] isKindOfClass:NSString.class]) return;
   NSString *identity = [NSString stringWithFormat:@"%@:%@", revision[@"sequence"], revision[@"graphRevision"]];
   if ([identity isEqualToString:self.lastAppliedRevision]) return;
 
   // The CLI publishes the bundle first and this fixed revision record last.
   // The provider accepts only the named bundle, never an app-supplied URL.
+  // A state-preserving patch is capability-gated. The pinned static template
+  // transport used by this host cannot yet prove renderer hook-state retention,
+  // so it must use the explicit, visible full-template fallback rather than
+  // silently claim Flutter-style reload semantics.
   self.lastAppliedRevision = identity;
+  NSString *mode = revision[@"deliveryMode"];
+  if (![mode isEqualToString:@"state_preserving_patch"] &&
+      ![mode isEqualToString:@"state_reset_template"]) {
+    [self writeAcknowledgementForRevision:revision
+                                   status:@"rejected_last_good"
+                                   reason:@"unsupported Axiom UI delivery mode"];
+    return;
+  }
   [self.lynxView loadTemplateFromURL:@"axiom.app.lynx" initData:nil];
-  [self writeAcknowledgementForRevision:revision status:@"reload_requested"];
+  if ([mode isEqualToString:@"state_preserving_patch"]) {
+    [self writeAcknowledgementForRevision:revision
+                                   status:@"applied_state_reset"
+                                   reason:@"state-preserving renderer patch is not yet proven for the pinned host; full template reload applied"];
+  } else {
+    NSString *reason = revision[@"fallbackReason"];
+    [self writeAcknowledgementForRevision:revision
+                                   status:@"applied_state_reset"
+                                   reason:[reason isKindOfClass:NSString.class] ? reason : @"full template reload requested"];
+  }
 }
 
 - (void)viewDidLoad {

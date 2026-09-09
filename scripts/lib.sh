@@ -35,7 +35,9 @@ verify_engine_source() {
 }
 
 runtime_revision() {
-  git -C "$repo_dir" rev-parse HEAD 2>/dev/null || printf 'workspace-uncommitted\n'
+  git -C "$repo_dir" rev-parse HEAD 2>/dev/null || \
+    git -C "$repo_dir/axiom-runtime" rev-parse HEAD 2>/dev/null || \
+    printf 'workspace-uncommitted\n'
 }
 
 sha256() {
