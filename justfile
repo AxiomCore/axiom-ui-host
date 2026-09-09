@@ -30,7 +30,7 @@ android-release:
 # Builds the signed, debuggable development-host APK consumed by `axiom run
 # --target android`. It is not an end-user app release.
 android-emulator:
-  ./scripts/build-android.sh release
+  infisical run --env=prod -- ./scripts/build-android.sh release
 
 package version:
   ./scripts/package-release.sh "{{version}}"

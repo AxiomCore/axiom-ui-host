@@ -58,11 +58,29 @@ if rg -l -i 'lynxexplorer|explorer/' "$host_dir/ios/AxiomUIHost" --glob '*.{h,m,
   exit 1
 fi
 grep -q '^android-emulator:' "$host_dir/justfile"
+grep -q 'Android host build troubleshooting' "$host_dir/README.md"
+grep -q 'More than one file was found' "$host_dir/docs/android-build-troubleshooting.md"
+grep -q 'Given final block not properly padded' "$host_dir/docs/android-build-troubleshooting.md"
+grep -q 'release-update' "$host_dir/docs/android-build-troubleshooting.md"
 grep -q 'build-android.sh" release' "$host_dir/scripts/publish-release.sh"
 grep -q 'AXIOM_UI_HOST_ANDROID_KEYSTORE_BASE64' "$host_dir/scripts/build-android.sh"
+grep -q 'keytool.*-certreq' "$host_dir/scripts/build-android.sh"
+grep -q 'Keystore type: PKCS12' "$host_dir/scripts/build-android.sh"
+grep -q 'effective_android_key_password' "$host_dir/scripts/build-android.sh"
+grep -q 'keypass="$storepass"' "$host_dir/scripts/provision-release-secrets.sh"
 grep -q 'cargo-ndk' "$host_dir/scripts/build-android.sh"
+grep -q 'src/main/nativeDeps' "$host_dir/scripts/build-android.sh"
+if grep -q 'cargo ndk.*src/main/jniLibs' "$host_dir/scripts/build-android.sh"; then
+  echo 'axiom-ui-host: CMake-imported Rust libraries must not also be staged in jniLibs' >&2
+  exit 1
+fi
+grep -q 'required_cmake_version="3.18.1"' "$host_dir/scripts/build-android.sh"
 grep -q 'axiom-ui-host-android-emulator.apk' "$host_dir/scripts/build-android.sh"
 grep -q "project(':AxiomUIHost')" "$host_dir/android/AxiomUIHost/settings.gradle.fragment"
+grep -q 'version CMAKE_VERSION' "$host_dir/android/AxiomUIHost/build.gradle"
+grep -q "implementation 'androidx.annotation:annotation:1.0.0'" "$host_dir/android/AxiomUIHost/build.gradle"
+grep -q '^cmake_minimum_required(VERSION 3\.18\.1)$' "$host_dir/android/bridge/CMakeLists.txt"
+grep -Fq '../nativeDeps/${ANDROID_ABI}/libaxiom_runtime.so' "$host_dir/android/bridge/CMakeLists.txt"
 grep -q 'dev.axiomcore.uihost' "$host_dir/android/AxiomUIHost/src/main/AndroidManifest.xml"
 grep -q 'AxiomUIHostProtocolVersion' "$host_dir/android/AxiomUIHost/src/main/AndroidManifest.xml"
 grep -q 'axiom.app.revision.json' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostActivity.java"
@@ -70,6 +88,7 @@ grep -q 'axiom-ui-host-revision/v2' "$host_dir/android/AxiomUIHost/src/main/java
 grep -q 'axiom-ui-host-ack/v2' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostActivity.java"
 grep -q 'applied_state_reset' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostActivity.java"
 grep -q 'System.loadLibrary("axiom_runtime_jni")' "$host_dir/android/bridge/AxiomRuntimeModule.java"
+grep -q 'mContext.getFilesDir()' "$host_dir/android/bridge/AxiomRuntimeModule.java"
 grep -q 'axiom_clear_callback' "$host_dir/android/bridge/AxiomRuntimeJni.cpp"
 if rg -l -i 'com\.lynx\.explorer|ExplorerApplication|LynxExplorer' "$host_dir/android/AxiomUIHost" "$host_dir/android/bridge" --glob '*.{java,cpp,gradle}' >/dev/null; then
   echo 'axiom-ui-host: Android product host must not include Explorer sources' >&2

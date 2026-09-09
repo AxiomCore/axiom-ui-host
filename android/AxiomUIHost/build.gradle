@@ -12,6 +12,13 @@ android {
         versionCode 1
         versionName '0.4.0'
         ndk { abiFilters(*rootProject.ext.abiList) }
+        // Lynx publishes several mutually exclusive implementations of its
+        // `lynx` flavor dimension. `noasan` is the normal, unsanitized
+        // renderer variant and is the one shared by every transitive Lynx
+        // module (including LynxJSSDK). Axiom's development transport is in
+        // this host, so it does not depend on Lynx's separate `dev` flavor.
+        // Keeping the host flavorless preserves assembleRelease.
+        missingDimensionStrategy 'lynx', 'noasan'
     }
 
     signingConfigs {
@@ -49,10 +56,20 @@ android {
         pickFirst 'lib/*/liblynxtrace.so'
     }
     sourceSets { main { jniLibs.srcDirs = ['src/main/jniLibs'] } }
-    externalNativeBuild { cmake { path 'src/main/cpp/CMakeLists.txt' } }
+    externalNativeBuild {
+        cmake {
+            path 'src/main/cpp/CMakeLists.txt'
+            // Match every native module in the pinned Lynx Gradle graph.
+            // Without this, AGP 4.1 silently defaults this module to 3.10.2.
+            version CMAKE_VERSION
+        }
+    }
 }
 
 dependencies {
+    // Lynx's annotation dependency is compileOnly, but its generated registry
+    // imports @Keep directly, so the application must provide it to javac.
+    implementation 'androidx.annotation:annotation:1.0.0'
     implementation project(':LynxAndroid')
     implementation project(':LynxBase')
     implementation project(':lynx_service_log')

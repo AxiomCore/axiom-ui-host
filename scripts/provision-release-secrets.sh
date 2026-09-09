@@ -5,8 +5,10 @@ output="${1:-$PWD/axiom-ui-host-release-secrets.env}"
 [[ ! -e "$output" ]] || die "refusing to overwrite $output"
 need openssl; need keytool; need cargo
 work="$(mktemp -d)"
-# Generate values once, then make the keystore with those exact values.
-storepass="$(openssl rand -hex 24)"; keypass="$(openssl rand -hex 24)"; alias="axiom-ui-host-$(openssl rand -hex 6)"
+# Java's PKCS12 provider does not support a private-key password that differs
+# from the store password. Use one generated password for both exported values
+# so Gradle can decrypt the key that keytool actually created.
+storepass="$(openssl rand -hex 24)"; keypass="$storepass"; alias="axiom-ui-host-$(openssl rand -hex 6)"
 keytool -genkeypair -keystore "$work/android.keystore" -storetype PKCS12 -storepass "$storepass" -keypass "$keypass" -alias "$alias" -keyalg RSA -keysize 4096 -validity 3650 -dname 'CN=Axiom UI Host, O=AxiomCore, C=US' >/dev/null
 keys="$(cargo run --quiet --manifest-path "$repo_dir/axiom-keygen/Cargo.toml" -- generate)"
 private="$(printf '%s\n' "$keys" | sed -n 's/^AXIOM_UI_HOST_SIGNING_PRIVATE_KEY_HEX=//p')"

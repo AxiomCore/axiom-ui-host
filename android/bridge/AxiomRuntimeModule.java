@@ -41,7 +41,9 @@ public final class AxiomRuntimeModule extends LynxModule {
     if (config == null || number(config.get("protocolVersion")) != FACADE_PROTOCOL_VERSION) {
       return status(2, "AXIOM_UI_RUNTIME_CONFIG: facade protocol 1 is required.");
     }
-    File root = new File(getContext().getFilesDir(), "axiom-ui-host");
+    // The pinned LynxModule API exposes its Context through protected mContext;
+    // newer getContext() accessors are not available in this engine revision.
+    File root = new File(mContext.getFilesDir(), "axiom-ui-host");
     if (!root.exists() && !root.mkdirs()) return status(2, "AXIOM_UI_RUNTIME_INIT: cannot create runtime storage.");
     int value = nativeInitialize(new File(root, "axiom-runtime.db").getAbsolutePath());
     result.put("status", value);

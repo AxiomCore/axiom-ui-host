@@ -28,6 +28,9 @@ just release-dry-run version=0.3.0
 just release-update 0.3.0
 ```
 
+For Android environment setup, known failure signatures, safe cache recovery,
+and release-publishing checks, see [Android host build troubleshooting](docs/android-build-troubleshooting.md).
+
 `ios-simulator` needs Xcode, CocoaPods, XcodeGen, Rust iOS targets, an iOS
 Simulator runtime, and a pinned source checkout. Run `just ios-runtime` once
 per Xcode version to install Xcode's matching simulator runtime; it may
@@ -42,8 +45,36 @@ still declares PrimJS as an upstream source pod; mirroring and locking that
 source is a remaining release-hardening item.
 `android-emulator` builds the signed Axiom-owned **development host** APK used
 by `axiom run --target android`; `android-debug` is the unsigned local build.
-Both require Android SDK, NDK, `cargo-ndk`, Java, and the pinned engine source.
-Set `ANDROID_HOME` and `ANDROID_NDK_HOME` (or their `*_ROOT` equivalents).
+Both require Android SDK, `cargo-ndk`, Java, and the pinned engine source.
+The renderer currently requires the SDK-managed side-by-side NDK
+**`21.1.6352462`**. Install it without removing other NDKs:
+
+```sh
+"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;21.1.6352462"
+"$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "cmake;3.18.1"
+```
+
+Set `ANDROID_HOME` (or `ANDROID_SDK_ROOT`) to the Android SDK. The host build
+automatically selects and exports that exact NDK for both Gradle and Cargo, so
+your global `ANDROID_NDK_HOME` may continue to point at another project’s NDK.
+`AXIOM_UI_HOST_NDK_HOME` can explicitly name that SDK-side-by-side directory;
+it must be `$ANDROID_HOME/ndk/21.1.6352462`.
+The Rust runtime is compiled with `cargo-ndk`, which requires NDK r23 or later.
+Leave `ANDROID_NDK_HOME` set to a modern installed NDK (for example 26.3), or
+set `AXIOM_UI_HOST_CARGO_NDK_HOME` to one. The build deliberately uses that
+modern NDK only for Cargo and switches back to r21 for the Lynx Gradle build.
+The host resolves Lynx’s Android `lynx` flavor dimension to `noasan`, the
+normal unsanitized variant shared by all transitive Lynx modules. Axiom’s
+development delivery protocol is implemented by the host itself; this keeps
+the Axiom artifact task stable as `assembleRelease`.
+All native Gradle modules use the renderer-pinned SDK CMake **3.18.1**; the
+build checks for it before compiling the Rust runtime.
+The pinned Android Gradle build requires JDK 11. On Apple Silicon, install it
+with `brew install openjdk@11` and set
+`AXIOM_UI_HOST_JAVA_HOME=/opt/homebrew/opt/openjdk@11/libexec/openjdk.jdk/Contents/Home`
+before running an Android host build. This variable is intentionally
+host-specific and does not require changing the Java version used by other
+projects.
 The release build takes the Android keystore only from the four
 `AXIOM_UI_HOST_ANDROID_*` variables and decodes it only into the opaque host
 cache. It never derives an application from an upstream sample host. Build
@@ -106,6 +137,9 @@ Before publishing, run `scripts/provision-release-secrets.sh` locally and put
 its generated values in Infisical. It creates a new Ed25519 host-release key
 and Android keystore. Apple signing material cannot be safely fabricated: it
 must be exported from an Apple Developer certificate and provisioning profile.
+The generated Android keystore is PKCS12, so its private-key password and store
+password intentionally match. The Android build validates both the alias and
+private-key password before starting the expensive native build.
 
 Release signing is intentionally a separate CI responsibility. The CI workflow
 must sign both the manifest and every platform archive with an Axiom-controlled
