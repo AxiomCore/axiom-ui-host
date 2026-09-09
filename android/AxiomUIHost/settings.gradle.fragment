@@ -1,0 +1,5 @@
+// Added by scripts/build-android.sh to the *staged* pinned engine checkout.
+// This project is owned by Axiom.  It does not include, package, or launch an
+// upstream sample application.
+include ':AxiomUIHost'
+project(':AxiomUIHost').projectDir = new File(rootProject.projectDir, './axiom_ui_host')

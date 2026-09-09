@@ -1,0 +1,24 @@
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="dev.axiomcore.uihost">
+    <uses-permission android:name="android.permission.INTERNET" />
+    <application
+        android:name=".AxiomHostApplication"
+        android:allowBackup="false"
+        android:label="Axiom UI Host"
+        android:theme="@style/AxiomHostTheme"
+        android:usesCleartextTraffic="true">
+        <meta-data android:name="AxiomUIHostProtocolVersion" android:value="2" />
+        <meta-data android:name="AxiomRuntimeABIVersion" android:value="1" />
+        <meta-data android:name="AxiomRuntimeModuleVersion" android:value="1" />
+        <meta-data android:name="AxiomRuntimeFacadeProtocolVersion" android:value="1" />
+        <activity
+            android:name=".AxiomHostActivity"
+            android:configChanges="keyboard|keyboardHidden|orientation|screenSize|uiMode"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>
