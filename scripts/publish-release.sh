@@ -7,6 +7,20 @@ version="${2:-}"
 [[ "$mode" == initial || "$mode" == update ]] || die "usage: publish-release.sh <initial|update> <version>"
 [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]] || die "version must be a semantic version without a leading v, for example 0.1.0"
 
+# A maintainer may keep the large release build cache on external storage
+# without changing normal developer builds or CI. An explicitly exported build
+# root always wins. This local configuration is deliberately outside Git.
+release_build_root_config="${AXIOM_UI_HOST_RELEASE_BUILD_ROOT_CONFIG:-${XDG_CONFIG_HOME:-$HOME/.config}/axiom-ui-host/release-build-root}"
+if [[ "$mode" == update && -z "${AXIOM_UI_HOST_BUILD_ROOT:-}" && -f "$release_build_root_config" ]]; then
+  release_build_root="$(sed -n '/^[[:space:]]*#/d; /^[[:space:]]*$/d; {p; q;}' "$release_build_root_config")"
+  [[ "$release_build_root" == /* ]] || die "release build-root config must contain one absolute path: $release_build_root_config"
+  release_build_root_parent="$(dirname "$release_build_root")"
+  [[ -d "$release_build_root_parent" && -w "$release_build_root_parent" ]] || \
+    die "configured release build-root is unavailable or not writable: $release_build_root (connect the external volume or set AXIOM_UI_HOST_BUILD_ROOT)"
+  export AXIOM_UI_HOST_BUILD_ROOT="$release_build_root"
+  printf '%s\n' "axiom-ui-host: using configured external release build cache: $AXIOM_UI_HOST_BUILD_ROOT"
+fi
+
 # Publishing a host is a production operation. Secrets are injected for this
 # one process by the just recipes; do not run this script with a copied key.
 [[ "${AXIOM_UI_HOST_RELEASE_SECRETS_LOADED:-}" == true ]] || die "release secrets are not loaded; run 'just release-$mode $version' so Infisical supplies them"

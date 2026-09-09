@@ -193,6 +193,26 @@ Do not add local build logs such as `logs/log-1.txt`, cached build directories,
 or decoded keystores. If unrelated work is present, commit only the reviewed
 Android-host files or stash the unrelated changes before publishing.
 
+### Put release builds on external storage
+
+`just release-update` reads the first non-empty, non-comment path from this
+local configuration file when `AXIOM_UI_HOST_BUILD_ROOT` is not already set:
+
+```text
+~/.config/axiom-ui-host/release-build-root
+```
+
+For example:
+
+```text
+/Volumes/ExternalSSD/axiom-ui-host-build
+```
+
+The external volume must be mounted and writable. This setting applies only to
+release updates on that machine; ordinary developer builds and CI retain their
+normal cache locations. To override it for a single invocation, set
+`AXIOM_UI_HOST_BUILD_ROOT` explicitly.
+
 ## Triage order on another machine
 
 1. Run `just check`.
