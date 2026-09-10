@@ -121,16 +121,23 @@ static void AxiomRuntimeResponse(const AxiomResponseBuffer *response) {
     callback(AxiomStatus(2, @"AXIOM_UI_RUNTIME_RESTART_REQUIRED: verified contract inputs changed; restart the host before replacing its native runtime configuration.")); return;
   }
   BOOL loadContracts = AxiomLoadedConfigurationFingerprint == nil;
+  BOOL allContractsVerified = YES;
   NSMutableDictionary<NSString *, NSDictionary *> *approved = [NSMutableDictionary dictionary];
   for (id candidate in config[@"contracts"]) {
     if (![candidate isKindOfClass:NSDictionary.class]) { callback(AxiomStatus(2, @"AXIOM_UI_RUNTIME_CONFIG: invalid contract entry.")); return; }
     NSDictionary *contract = candidate;
-    NSString *namespaceName, *baseURL, *artifactBase64, *signature, *publicKey, *expectedHash;
+    NSString *namespaceName, *baseURL, *artifactBase64, *expectedHash;
+    id signatureCandidate = contract[@"signature"];
+    id publicKeyCandidate = contract[@"publicKey"];
+    NSString *signature = [signatureCandidate isKindOfClass:NSString.class] ? signatureCandidate : nil;
+    NSString *publicKey = [publicKeyCandidate isKindOfClass:NSString.class] ? publicKeyCandidate : nil;
+    BOOL expectedVerified = [contract[@"verified"] boolValue];
     if (!AxiomStringValue(contract, @"namespace", &namespaceName) || !AxiomStringValue(contract, @"baseUrl", &baseURL) ||
-        !AxiomStringValue(contract, @"artifactBase64", &artifactBase64) || !AxiomStringValue(contract, @"signature", &signature) ||
-        !AxiomStringValue(contract, @"publicKey", &publicKey) || !AxiomStringValue(contract, @"expectedSha256", &expectedHash) ||
+        !AxiomStringValue(contract, @"artifactBase64", &artifactBase64) || signature == nil || publicKey == nil ||
+        !AxiomStringValue(contract, @"expectedSha256", &expectedHash) ||
+        (expectedVerified && (signature.length == 0 || publicKey.length == 0)) ||
         ![contract[@"operations"] isKindOfClass:NSArray.class]) {
-      callback(AxiomStatus(2, @"AXIOM_UI_RUNTIME_CONFIG: contract lacks verified locked inputs.")); return;
+      callback(AxiomStatus(2, @"AXIOM_UI_RUNTIME_CONFIG: contract has incomplete locked inputs.")); return;
     }
     NSData *artifact = [[NSData alloc] initWithBase64EncodedString:artifactBase64 options:0];
     if (artifact == nil || artifact.length == 0) { callback(AxiomStatus(2, @"AXIOM_UI_RUNTIME_CONFIG: invalid artifact encoding.")); return; }
@@ -138,8 +145,10 @@ static void AxiomRuntimeResponse(const AxiomResponseBuffer *response) {
     if (loadContracts) {
       status = axiom_load_contract_locked(AxiomStringFromNSString(namespaceName), AxiomStringFromNSString(baseURL), bytes,
         AxiomStringFromNSString(signature), AxiomStringFromNSString(publicKey), AxiomStringFromNSString(expectedHash));
-      if (status != 0) { callback(AxiomStatus(status, @"AXIOM_UI_RUNTIME_VERIFY: locked contract verification failed.")); return; }
+      if (status != 0 && status != -1) { callback(AxiomStatus(status, @"AXIOM_UI_RUNTIME_VERIFY: locked contract loading failed.")); return; }
+      if ((status == 0) != expectedVerified) { callback(AxiomStatus(2, @"AXIOM_UI_RUNTIME_VERIFY: contract verification state differs from its lock.")); return; }
     }
+    if (!expectedVerified) allContractsVerified = NO;
     for (id operationCandidate in contract[@"operations"]) {
       if (![operationCandidate isKindOfClass:NSDictionary.class]) { callback(AxiomStatus(2, @"AXIOM_UI_RUNTIME_CONFIG: invalid operation entry.")); return; }
       NSDictionary *operation = operationCandidate;
@@ -158,7 +167,7 @@ static void AxiomRuntimeResponse(const AxiomResponseBuffer *response) {
   }
   @synchronized(AxiomAllowedEndpoints) { [AxiomAllowedEndpoints setDictionary:approved]; }
   AxiomLoadedConfigurationFingerprint = configurationFingerprint;
-  callback(@{ @"status": @0, @"verified": @YES, @"loadedContracts": @([config[@"contracts"] count]) });
+  callback(@{ @"status": @0, @"verified": @(allContractsVerified), @"loadedContracts": @([config[@"contracts"] count]) });
 }
 
 - (void)dispatch:(NSDictionary *)envelope callback:(LynxCallbackBlock)callback {
