@@ -8,6 +8,9 @@
 @property(nonatomic, strong) LynxView *lynxView;
 @property(nonatomic, strong) NSTimer *revisionTimer;
 @property(nonatomic, copy) NSString *lastAppliedRevision;
+@property(nonatomic, assign) CGSize lastPublishedViewportSize;
+@property(nonatomic, assign) UIEdgeInsets lastPublishedSafeAreaInsets;
+@property(nonatomic, assign) BOOL hasPublishedViewport;
 @end
 
 @implementation AxiomHostViewController
@@ -16,6 +19,54 @@
   NSURL *root = [[NSFileManager defaultManager] URLsForDirectory:NSApplicationSupportDirectory
                                                        inDomains:NSUserDomainMask].firstObject;
   return [root URLByAppendingPathComponent:@"AxiomUIHost" isDirectory:YES];
+}
+
+- (UIEdgeInsets)axiomSafeAreaInsets {
+  if (@available(iOS 11.0, *)) {
+    UIEdgeInsets insets = self.view.safeAreaInsets;
+    if (!UIEdgeInsetsEqualToEdgeInsets(insets, UIEdgeInsetsZero)) return insets;
+    UIWindow *window = self.view.window;
+    if (window != nil && !UIEdgeInsetsEqualToEdgeInsets(window.safeAreaInsets, UIEdgeInsetsZero)) {
+      return window.safeAreaInsets;
+    }
+  }
+  return UIEdgeInsetsZero;
+}
+
+- (NSDictionary<NSString *, id> *)axiomGlobalProps {
+  UIEdgeInsets insets = [self axiomSafeAreaInsets];
+  CGSize size = self.view.bounds.size;
+  return @{
+    @"screenWidth": @(size.width),
+    @"screenHeight": @(size.height),
+    @"safeAreaTop": @(insets.top),
+    @"safeAreaRight": @(insets.right),
+    @"safeAreaBottom": @(insets.bottom),
+    @"safeAreaLeft": @(insets.left),
+    @"isNotchScreen": @((insets.top > 20.0) || (insets.bottom > 0.0)),
+  };
+}
+
+- (void)updateLynxViewport {
+  if (self.lynxView == nil) return;
+  CGSize size = self.view.bounds.size;
+  UIEdgeInsets insets = [self axiomSafeAreaInsets];
+  self.lynxView.frame = self.view.bounds;
+  if (self.hasPublishedViewport &&
+      CGSizeEqualToSize(self.lastPublishedViewportSize, size) &&
+      UIEdgeInsetsEqualToEdgeInsets(self.lastPublishedSafeAreaInsets, insets)) {
+    return;
+  }
+  self.hasPublishedViewport = YES;
+  self.lastPublishedViewportSize = size;
+  self.lastPublishedSafeAreaInsets = insets;
+  self.lynxView.preferredLayoutWidth = size.width;
+  self.lynxView.preferredLayoutHeight = size.height;
+  [self.lynxView updateScreenMetricsWithWidth:size.width height:size.height];
+  [self.lynxView updateViewportWithPreferredLayoutWidth:size.width
+                                  preferredLayoutHeight:size.height
+                                             needLayout:YES];
+  [self.lynxView updateGlobalPropsWithDictionary:[self axiomGlobalProps]];
 }
 
 - (void)writeAcknowledgementForRevision:(NSDictionary *)revision
@@ -78,6 +129,7 @@
     return;
   }
   [self.lynxView loadTemplateFromURL:@"axiom.app.lynx" initData:nil];
+  [self.lynxView triggerLayout];
   if ([mode isEqualToString:@"state_preserving_patch"]) {
     [self writeAcknowledgementForRevision:revision
                                    status:@"applied_state_reset"
@@ -106,15 +158,23 @@
   view.preferredLayoutHeight = self.view.bounds.size.height;
   view.layoutWidthMode = LynxViewSizeModeExact;
   view.layoutHeightMode = LynxViewSizeModeExact;
+  view.enableAutoLayout = YES;
   [self.view addSubview:view];
   self.lynxView = view;
+  [self updateLynxViewport];
   [view loadTemplateFromURL:@"axiom.app.lynx" initData:nil];
+  [view triggerLayout];
   self.revisionTimer = [NSTimer scheduledTimerWithTimeInterval:0.25
                                                          target:self
                                                        selector:@selector(pollForRevision)
                                                        userInfo:nil
                                                         repeats:YES];
   [self pollForRevision];
+}
+
+- (void)viewDidLayoutSubviews {
+  [super viewDidLayoutSubviews];
+  [self updateLynxViewport];
 }
 
 - (void)dealloc {
