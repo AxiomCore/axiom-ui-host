@@ -78,6 +78,20 @@ No BehaviorController defined for class input
 `AxiomHostActivity`. The UI class creates the Android view; the shadow node
 measures it. Both are required.
 
+This diagnostic on every page, including pages with no authored image, means
+the image service was linked but not registered before `LynxEnv.init()`:
+
+```text
+UI error LYNX_32102: An exception occurred when try to get image prefetch helper.
+```
+
+The resource module is installed for every Lynx page and resolves
+`ILynxImageService` during construction. The Android application must register
+`LynxImageService.getInstance()` in `LynxServiceCenter` before initializing
+`LynxEnv`; it must also package and initialize Fresco because the pinned image
+service declares that backend as `compileOnly`. Do not hide `LYNX_32102` in the
+CLI: a missing service would also break real `<image>` rendering and prefetch.
+
 ## 3. Check the iOS native registry
 
 Use the Simulator/Xcode console and search for `Lynx`, `input`, and Axiom host

@@ -79,4 +79,11 @@ dependencies {
     implementation project(':lynx_service_log')
     implementation project(':lynx_service_image')
     implementation project(':lynx_service_http')
+    // lynx_service_image declares Fresco as compileOnly, leaving the product
+    // host responsible for providing and initializing the image backend.
+    implementation 'com.facebook.fresco:fresco:2.3.0'
+    implementation 'com.facebook.fresco:animated-gif:2.3.0'
+    implementation 'com.facebook.fresco:animated-webp:2.3.0'
+    implementation 'com.facebook.fresco:webpsupport:2.3.0'
+    implementation 'com.facebook.fresco:animated-base:2.3.0'
 }
