@@ -165,9 +165,11 @@ PY
     --root "$engine_stage" --enable-autosync-version
   popd >/dev/null
 fi
-if [[ ! -f "$engine_stage/Lynx.podspec" ]]; then
-  die "upstream source bootstrap completed without Lynx.podspec; inspect $engine_stage for the generator failure"
-fi
+for required_podspec in Lynx.podspec LynxService.podspec; do
+  if [[ ! -f "$engine_stage/$required_podspec" ]]; then
+    die "upstream source bootstrap completed without $required_podspec; inspect $engine_stage for the generator failure"
+  fi
+done
 
 runtime_dir="$repo_dir/axiom-runtime"
 [[ -f "$runtime_dir/Cargo.toml" ]] || die "Axiom runtime not found at $runtime_dir"

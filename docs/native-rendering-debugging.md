@@ -114,6 +114,14 @@ If text and built-in views render but only `<input>` is absent, compare the
 Podfile and those registrations before investigating layout. A CSS fix cannot
 instantiate a native component that was never linked.
 
+If text renders but `<image>` is blank, confirm that the Podfile links
+`LynxService/Image`, not only `LynxServiceAPI`. The API pod provides the
+registry interface but no image view or decoder. The concrete image service
+uses SDWebImage and handles the `data:image/...;base64,...` URLs that the Axiom
+CLI emits for verified local assets. An image without authored dimensions uses
+its intrinsic size, so a missing image service commonly appears as empty space
+rather than a compile or delivery failure.
+
 ## 4. Make interaction tests observable
 
 Typing into the Phase 5 local-interaction example must update `draft`; tapping
@@ -132,7 +140,7 @@ the wrong dual-runtime copy.
 - `cargo test --manifest-path axiom-ui/Cargo.toml --lib` checks generated event
   bindings and directives.
 - `axiom-ui-host/tests/validate-host.sh` checks that both host targets link and
-  register native Input support.
+  register native Input support and their platform image services.
 - Device validation must still type a non-empty value, submit it, and reset it
   on both iOS Simulator and Android Emulator.
 - Run iOS and Android watchers together and edit once; their Rspeedy workspaces

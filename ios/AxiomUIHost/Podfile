@@ -8,6 +8,10 @@ target 'AxiomUIHost' do
   pod 'Lynx', :path => '../engine', :subspecs => ['Framework']
   pod 'LynxBase', :path => '../engine', :subspecs => ['Framework']
   pod 'LynxServiceAPI', :path => '../engine'
+  # LynxServiceAPI is only the service registry. The concrete Image subspec
+  # supplies the UIImageView factory and SDWebImage decoder used by <image>,
+  # including the data: URLs emitted for verified local Axiom assets.
+  pod 'LynxService', :path => '../engine', :subspecs => ['Image']
   # Input is an XElement component, not a Lynx built-in. Keep the dependency
   # narrow and register it explicitly in AxiomHostViewController.
   pod 'XElement', :path => '../engine', :subspecs => ['Input']
