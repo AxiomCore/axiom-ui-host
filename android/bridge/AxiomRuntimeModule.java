@@ -151,7 +151,10 @@ public final class AxiomRuntimeModule extends LynxModule {
     Map<String, Object> result = status(nativeCancel((long) requestId), null);
     result.put("requestId", (long) requestId); return result;
   }
-  @LynxMethod public Map<String, Object> close() { return status(0, null); }
+  @LynxMethod public synchronized Map<String, Object> close() {
+    ALLOWED.clear(); EVENTS.clear(); loadedFingerprint = null; initialized = false;
+    return status(nativeClose(), null);
+  }
 
   private static void onNativeResponse(long requestId, int eventType, int eventStatus, byte[] data, byte[] error) {
     Map<String, Object> event = new HashMap<>();
@@ -169,6 +172,7 @@ public final class AxiomRuntimeModule extends LynxModule {
   private static native int nativeCall(long requestId, String namespace, long endpointId, String method, String path, String traceparent, String headersJson, byte[] payload);
   private static native void nativeProcessResponses();
   private static native int nativeCancel(long requestId);
+  private static native int nativeClose();
 
   private static String key(String namespace, long endpointId) { return namespace + ":" + endpointId; }
   private static int integer(Object value) { return value instanceof Number ? ((Number) value).intValue() : -1; }

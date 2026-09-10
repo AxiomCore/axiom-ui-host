@@ -125,3 +125,9 @@ extern "C" JNIEXPORT jint JNICALL
 Java_com_axiom_uihost_AxiomRuntimeModule_nativeCancel(JNIEnv*, jclass, jlong request_id) {
   return axiom_cancel(static_cast<uint64_t>(request_id));
 }
+
+extern "C" JNIEXPORT jint JNICALL
+Java_com_axiom_uihost_AxiomRuntimeModule_nativeClose(JNIEnv*, jclass) {
+  axiom_clear_callback();
+  return 0;
+}

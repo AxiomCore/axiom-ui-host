@@ -1,6 +1,10 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
+# Bare grep assertions used to make Infisical report only an opaque child
+# process exit. Always identify the exact failed validation and source line.
+trap 'status=$?; printf "axiom-ui-host: validation failed at line %s: %s (exit %s)\n" "$LINENO" "$BASH_COMMAND" "$status" >&2; exit "$status"' ERR
+
 host_dir="$(cd "$(dirname "$0")/.." && pwd)"
 repo_dir="$(cd "$host_dir/.." && pwd)"
 scratch="$(mktemp -d)"
@@ -129,7 +133,11 @@ grep -q 'axiom-ui-host-diagnostics/v1' "$host_dir/android/AxiomUIHost/src/main/j
 grep -q 'applied_state_reset' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostActivity.java"
 grep -q 'System.loadLibrary("axiom_runtime_jni")' "$host_dir/android/bridge/AxiomRuntimeModule.java"
 grep -q 'mContext.getFilesDir()' "$host_dir/android/bridge/AxiomRuntimeModule.java"
+grep -q 'nativeLoadContract' "$host_dir/android/bridge/AxiomRuntimeModule.java"
+grep -q '@LynxMethod public void poll' "$host_dir/android/bridge/AxiomRuntimeModule.java"
 grep -q 'axiom_clear_callback' "$host_dir/android/bridge/AxiomRuntimeJni.cpp"
+grep -q 'axiom_load_contract_locked' "$host_dir/android/bridge/AxiomRuntimeJni.cpp"
+grep -q 'axiom_process_responses' "$host_dir/android/bridge/AxiomRuntimeJni.cpp"
 if rg -l -i 'com\.lynx\.explorer|ExplorerApplication|LynxExplorer' "$host_dir/android/AxiomUIHost" "$host_dir/android/bridge" --glob '*.{java,cpp,gradle}' >/dev/null; then
   echo 'axiom-ui-host: Android product host must not include Explorer sources' >&2
   exit 1
