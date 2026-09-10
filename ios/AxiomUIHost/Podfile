@@ -8,6 +8,9 @@ target 'AxiomUIHost' do
   pod 'Lynx', :path => '../engine', :subspecs => ['Framework']
   pod 'LynxBase', :path => '../engine', :subspecs => ['Framework']
   pod 'LynxServiceAPI', :path => '../engine'
+  # Input is an XElement component, not a Lynx built-in. Keep the dependency
+  # narrow and register it explicitly in AxiomHostViewController.
+  pod 'XElement', :path => '../engine', :subspecs => ['Input']
   # This pinned engine revision declares PrimJS 4.2.0-alpha.0, while the
   # source checkout's development podspec advertises a newer incompatible
   # version. Let Lynx resolve its declared source pod until PrimJS is vendored

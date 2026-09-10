@@ -3,6 +3,7 @@
 #import "AxiomRuntimeModule.h"
 #import <Lynx/LynxConfig.h>
 #import <Lynx/LynxView.h>
+#import <XElement/LynxUIInput.h>
 
 @interface AxiomHostViewController ()
 @property(nonatomic, strong) LynxView *lynxView;
@@ -148,6 +149,10 @@
   LynxView *view = [[LynxView alloc] initWithBuilderBlock:^(LynxViewBuilder *builder) {
     LynxConfig *config = [[LynxConfig alloc] initWithProvider:AxiomBundleProvider.new];
     AxiomInstallRuntimeModule(config);
+    // <input> is supplied by XElement rather than Lynx's built-in registry.
+    // Register both halves: the UIKit view and its custom-measure shadow node.
+    [config registerUI:LynxUIInput.class withName:@"input"];
+    [config registerShadowNode:LynxUIInputShadowNode.class withName:@"input"];
     builder.config = config;
     builder.screenSize = self.view.bounds.size;
     builder.fontScale = 1.0;

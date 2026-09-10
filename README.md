@@ -30,6 +30,8 @@ just release-update 0.3.0
 
 For Android environment setup, known failure signatures, safe cache recovery,
 and release-publishing checks, see [Android host build troubleshooting](docs/android-build-troubleshooting.md).
+For missing native elements or inert interactions after successful delivery,
+see [native UI rendering debugging](docs/native-rendering-debugging.md).
 
 `ios-simulator` needs Xcode, CocoaPods, XcodeGen, Rust iOS targets, an iOS
 Simulator runtime, and a pinned source checkout. Run `just ios-runtime` once

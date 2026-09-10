@@ -63,12 +63,17 @@ grep -q 'native host build failed' "$host_dir/scripts/build-ios.sh"
 grep -q "pod 'Lynx', :path => '../engine'" "$host_dir/ios/AxiomUIHost/Podfile"
 grep -q "pod 'LynxBase', :path => '../engine'" "$host_dir/ios/AxiomUIHost/Podfile"
 grep -q "pod 'LynxServiceAPI', :path => '../engine'" "$host_dir/ios/AxiomUIHost/Podfile"
+grep -q "pod 'XElement', :path => '../engine', :subspecs => \['Input'\]" "$host_dir/ios/AxiomUIHost/Podfile"
+grep -q 'registerUI:LynxUIInput.class withName:@"input"' "$host_dir/ios/AxiomUIHost/AxiomHostViewController.m"
+grep -q 'registerShadowNode:LynxUIInputShadowNode.class withName:@"input"' "$host_dir/ios/AxiomUIHost/AxiomHostViewController.m"
 if rg -l -i 'lynxexplorer|explorer/' "$host_dir/ios/AxiomUIHost" --glob '*.{h,m,yml}' --glob 'Podfile' >/dev/null; then
   echo 'axiom-ui-host: iOS product host must not include Explorer sources' >&2
   exit 1
 fi
 grep -q '^android-emulator:' "$host_dir/justfile"
 grep -q 'Android host build troubleshooting' "$host_dir/README.md"
+grep -q 'native UI rendering debugging' "$host_dir/README.md"
+grep -q 'No BehaviorController defined for class input' "$host_dir/docs/native-rendering-debugging.md"
 grep -q 'More than one file was found' "$host_dir/docs/android-build-troubleshooting.md"
 grep -q 'Given final block not properly padded' "$host_dir/docs/android-build-troubleshooting.md"
 grep -q 'release-update' "$host_dir/docs/android-build-troubleshooting.md"
@@ -91,6 +96,9 @@ grep -q 'axiom-ui-host-android-emulator.apk' "$host_dir/scripts/build-android.sh
 grep -q "project(':AxiomUIHost')" "$host_dir/android/AxiomUIHost/settings.gradle.fragment"
 grep -q 'version CMAKE_VERSION' "$host_dir/android/AxiomUIHost/build.gradle"
 grep -q "implementation 'androidx.annotation:annotation:1.0.0'" "$host_dir/android/AxiomUIHost/build.gradle"
+grep -q "implementation project(':LynxXElement:Input')" "$host_dir/android/AxiomUIHost/build.gradle"
+grep -q 'new Behavior("input"' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostActivity.java"
+grep -q 'new LynxUIInputShadowNode()' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostActivity.java"
 grep -q '^cmake_minimum_required(VERSION 3\.18\.1)$' "$host_dir/android/bridge/CMakeLists.txt"
 grep -Fq '../nativeDeps/${ANDROID_ABI}/libaxiom_runtime.so' "$host_dir/android/bridge/CMakeLists.txt"
 grep -q 'dev.axiomcore.uihost' "$host_dir/android/AxiomUIHost/src/main/AndroidManifest.xml"

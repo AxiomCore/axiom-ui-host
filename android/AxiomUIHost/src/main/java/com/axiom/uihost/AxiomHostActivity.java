@@ -10,6 +10,12 @@ import android.view.ViewGroup;
 import android.widget.FrameLayout;
 import com.lynx.tasm.LynxView;
 import com.lynx.tasm.LynxViewBuilder;
+import com.lynx.tasm.behavior.Behavior;
+import com.lynx.tasm.behavior.LynxContext;
+import com.lynx.tasm.behavior.shadow.ShadowNode;
+import com.lynx.tasm.behavior.ui.LynxUI;
+import com.lynx.xelement.input.LynxUIInput;
+import com.lynx.xelement.input.LynxUIInputShadowNode;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
@@ -42,7 +48,20 @@ public final class AxiomHostActivity extends Activity {
 
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
-    lynxView = new LynxView(this, new LynxViewBuilder());
+    LynxViewBuilder builder = new LynxViewBuilder();
+    // Keep Axiom's native primitive surface explicit. Pulling the aggregate
+    // XElement registry would link every optional XElement component merely
+    // to support Input.
+    builder.addBehavior(new Behavior("input", false, false, false) {
+      @Override public LynxUI createUIWithParams(LynxContext context, Object params) {
+        return new LynxUIInput(context, params);
+      }
+
+      @Override public ShadowNode createShadowNode() {
+        return new LynxUIInputShadowNode();
+      }
+    });
+    lynxView = new LynxView(this, builder);
     setContentView(lynxView, new FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     handler.post(watchRevision);
