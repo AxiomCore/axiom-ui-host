@@ -3,7 +3,7 @@
 
 static const NSInteger AxiomFacadeProtocolVersion = 1;
 static const NSInteger AxiomNativeModuleVersion = 1;
-static NSMutableDictionary<NSNumber *, LynxCallbackBlock> *AxiomCallbacks;
+static NSMutableArray<NSDictionary *> *AxiomEvents;
 static NSMutableDictionary<NSString *, NSDictionary *> *AxiomAllowedEndpoints;
 static dispatch_once_t AxiomRuntimeOnce;
 static dispatch_source_t AxiomResponsePump;
@@ -58,16 +58,11 @@ static void AxiomRuntimeResponse(const AxiomResponseBuffer *response) {
                            @"status": @(response->error_code),
                            @"data": AxiomUTF8String(response->data),
                            @"error": AxiomUTF8String(response->error_message) };
-  BOOL terminal = response->event_type == 0;
   axiom_free_response_buffer((AxiomResponseBuffer *)response);
-  dispatch_async(dispatch_get_main_queue(), ^{
-    LynxCallbackBlock callback;
-    @synchronized(AxiomCallbacks) {
-      callback = AxiomCallbacks[requestID];
-      if (terminal) [AxiomCallbacks removeObjectForKey:requestID];
-    }
-    if (callback != nil) callback(event);
-  });
+  // LynxCallbackBlock is one-shot on the pinned iOS engine. Queue response
+  // envelopes for poll: instead of trying to invoke dispatch's ack callback
+  // again (which Lynx silently drops).
+  @synchronized(AxiomEvents) { [AxiomEvents addObject:event]; }
 }
 
 @implementation AxiomRuntimeModule
@@ -75,7 +70,7 @@ static void AxiomRuntimeResponse(const AxiomResponseBuffer *response) {
 + (void)initialize {
   if (self != AxiomRuntimeModule.class) return;
   dispatch_once(&AxiomRuntimeOnce, ^{
-    AxiomCallbacks = [NSMutableDictionary dictionary];
+    AxiomEvents = [NSMutableArray array];
     AxiomAllowedEndpoints = [NSMutableDictionary dictionary];
     axiom_register_callback(AxiomRuntimeResponse);
     AxiomResponsePump = dispatch_source_create(DISPATCH_SOURCE_TYPE_TIMER, 0, 0,
@@ -92,6 +87,7 @@ static void AxiomRuntimeResponse(const AxiomResponseBuffer *response) {
   return @{ @"runtimeInfo": NSStringFromSelector(@selector(runtimeInfo:)),
             @"initialize": NSStringFromSelector(@selector(initialize:callback:)),
             @"dispatch": NSStringFromSelector(@selector(dispatch:callback:)),
+            @"poll": NSStringFromSelector(@selector(poll:)),
             @"cancel": NSStringFromSelector(@selector(cancel:)),
             @"close": NSStringFromSelector(@selector(close)) };
 }
@@ -189,28 +185,32 @@ static void AxiomRuntimeResponse(const AxiomResponseBuffer *response) {
       ![approved[@"kind"] isEqual:kind] || ![kind isEqual:envelope[@"kind"]]) {
     callback(@{ @"accepted": @YES, @"status": @2, @"error": @"AXIOM_UI_OPERATION_DENIED: request is absent from the verified contract capability set." }); return;
   }
-  @synchronized(AxiomCallbacks) {
-    if (AxiomCallbacks[@(requestID)] != nil) { callback(@{ @"accepted": @YES, @"status": @2, @"error": @"Duplicate requestId." }); return; }
-    AxiomCallbacks[@(requestID)] = [callback copy];
-  }
   NSData *payload = [[NSData alloc] initWithBase64EncodedString:request[@"payloadBase64"] ?: @"" options:0] ?: [NSData data];
   AxiomBuffer input = {.ptr = (uint8_t *)payload.bytes, .len = payload.length};
   int32_t status = axiom_call(requestID, AxiomStringFromNSString(namespaceName), endpointID.unsignedIntValue,
     AxiomStringFromNSString(method), AxiomStringFromNSString(path), AxiomStringFromNSString(request[@"traceparent"] ?: @""),
     AxiomStringFromNSString(request[@"headersJson"] ?: @"{}"), input);
   if (status != 0) {
-    @synchronized(AxiomCallbacks) { [AxiomCallbacks removeObjectForKey:@(requestID)]; }
     callback(@{ @"accepted": @YES, @"status": @(status), @"error": @"Axiom runtime rejected the request." }); return;
   }
   callback(@{ @"accepted": @YES, @"status": @0 });
 }
 
+- (void)poll:(LynxCallbackBlock)callback {
+  NSDictionary *event = nil;
+  @synchronized(AxiomEvents) {
+    if (AxiomEvents.count > 0) {
+      event = AxiomEvents.firstObject;
+      [AxiomEvents removeObjectAtIndex:0];
+    }
+  }
+  callback(event ?: AxiomStatus(0, nil));
+}
+
 - (NSDictionary *)cancel:(NSNumber *)requestID { return @{ @"requestId": requestID, @"status": @(axiom_cancel(requestID.unsignedLongLongValue)) }; }
 
 - (NSDictionary *)close {
-  NSArray<NSNumber *> *requestIDs;
-  @synchronized(AxiomCallbacks) { requestIDs = AxiomCallbacks.allKeys; [AxiomCallbacks removeAllObjects]; }
-  for (NSNumber *requestID in requestIDs) axiom_cancel(requestID.unsignedLongLongValue);
+  @synchronized(AxiomEvents) { [AxiomEvents removeAllObjects]; }
   return @{ @"status": @0 };
 }
 @end
@@ -218,7 +218,7 @@ static void AxiomRuntimeResponse(const AxiomResponseBuffer *response) {
 void AxiomShutdownRuntimeModule(void) {
   if (AxiomResponsePump != nil) { dispatch_source_cancel(AxiomResponsePump); AxiomResponsePump = nil; }
   axiom_clear_callback();
-  @synchronized(AxiomCallbacks) { [AxiomCallbacks removeAllObjects]; }
+  @synchronized(AxiomEvents) { [AxiomEvents removeAllObjects]; }
   @synchronized(AxiomAllowedEndpoints) { [AxiomAllowedEndpoints removeAllObjects]; }
   AxiomLoadedConfigurationFingerprint = nil;
 }

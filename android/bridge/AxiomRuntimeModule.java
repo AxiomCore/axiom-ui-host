@@ -34,16 +34,20 @@ public final class AxiomRuntimeModule extends LynxModule {
   static { System.loadLibrary("axiom_runtime_jni"); }
   public AxiomRuntimeModule(Context context) { super(context); }
 
-  @LynxMethod public Map<String, Object> runtimeInfo() {
+  @LynxMethod public void runtimeInfo(Callback callback) {
     Map<String, Object> result = new HashMap<>();
     result.put("moduleVersion", MODULE_VERSION);
     result.put("runtimeAbiVersion", nativeAbiVersion());
     result.put("target", "android");
     result.put("capabilities", new String[] {"query", "mutation", "cancel"});
-    return result;
+    callback.invoke(result);
   }
 
-  @LynxMethod public synchronized Map<String, Object> initialize(Map<String, Object> config) {
+  @LynxMethod public synchronized void initialize(Map<String, Object> config, Callback callback) {
+    callback.invoke(initializeOnce(config));
+  }
+
+  private synchronized Map<String, Object> initializeOnce(Map<String, Object> config) {
     if (config == null || integer(config.get("protocolVersion")) != PROTOCOL ||
         !(config.get("contracts") instanceof List) || ((List<?>) config.get("contracts")).isEmpty()) {
       return status(2, "AXIOM_UI_RUNTIME_CONFIG: a non-empty protocol-1 contract configuration is required.");
