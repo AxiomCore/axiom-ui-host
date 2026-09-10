@@ -8,8 +8,10 @@ import android.util.Base64;
 import android.util.Log;
 import android.view.ViewGroup;
 import android.widget.FrameLayout;
+import com.lynx.tasm.LynxError;
 import com.lynx.tasm.LynxView;
 import com.lynx.tasm.LynxViewBuilder;
+import com.lynx.tasm.LynxViewClient;
 import com.lynx.tasm.behavior.Behavior;
 import com.lynx.tasm.behavior.LynxContext;
 import com.lynx.tasm.behavior.shadow.ShadowNode;
@@ -22,6 +24,7 @@ import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Collections;
+import org.json.JSONArray;
 import org.json.JSONObject;
 
 /**
@@ -34,9 +37,13 @@ public final class AxiomHostActivity extends Activity {
   private static final String BUNDLE = "axiom.app.lynx.bundle";
   private static final String REVISION = "axiom.app.revision.json";
   private static final String ACK = "axiom.app.ack.json";
+  private static final String DIAGNOSTIC = "axiom.app.diagnostic.json";
   private final Handler handler = new Handler(Looper.getMainLooper());
   private LynxView lynxView;
   private String seenRevision = "";
+  private long activeSequence = 0;
+  private String activeGraphRevision = "";
+  private long diagnosticSequence = 0;
 
   private final Runnable watchRevision = new Runnable() {
     @Override public void run() {
@@ -62,6 +69,11 @@ public final class AxiomHostActivity extends Activity {
       }
     });
     lynxView = new LynxView(this, builder);
+    lynxView.addLynxViewClient(new LynxViewClient() {
+      @Override public void onReceivedError(LynxError error) {
+        publishDiagnostic(error);
+      }
+    });
     setContentView(lynxView, new FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
     handler.post(watchRevision);
@@ -92,6 +104,12 @@ public final class AxiomHostActivity extends Activity {
       seenRevision = identity;
       return;
     }
+    activeSequence = sequence;
+    activeGraphRevision = graph;
+    File staleDiagnostic = new File(support(), DIAGNOSTIC);
+    if (staleDiagnostic.isFile() && !staleDiagnostic.delete()) {
+      Log.w(TAG, "cannot clear stale Lynx diagnostic");
+    }
     // Lynx's public byte-template API replaces the page template. A future
     // renderer patch API may acknowledge preserved state, but until it has
     // Android E2E evidence this host reports an honest reset fallback.
@@ -102,6 +120,35 @@ public final class AxiomHostActivity extends Activity {
         : revision.optString("fallbackReason", "native template reload");
     writeAck(sequence, graph, "applied_state_reset", reason);
     seenRevision = identity;
+  }
+
+  private synchronized void publishDiagnostic(LynxError error) {
+    if (activeSequence <= 0 || activeGraphRevision.length() == 0) return;
+    try {
+      JSONObject diagnostic = new JSONObject();
+      diagnostic.put("id", ++diagnosticSequence);
+      diagnostic.put("sequence", activeSequence);
+      diagnostic.put("graphRevision", activeGraphRevision);
+      diagnostic.put("severity", LynxError.LEVEL_WARN.equals(error.getLevel()) ? "warning" : "error");
+      diagnostic.put("code", "LYNX_" + error.getSubCode());
+      diagnostic.put("message", error.getSummaryMessage());
+      diagnostic.put("suggestion", error.getFixSuggestion());
+      File destination = new File(support(), DIAGNOSTIC);
+      JSONObject envelope = destination.isFile()
+          ? new JSONObject(readUtf8(destination))
+          : new JSONObject();
+      if (!"axiom-ui-host-diagnostics/v1".equals(envelope.optString("format"))) {
+        envelope = new JSONObject();
+        envelope.put("format", "axiom-ui-host-diagnostics/v1");
+        envelope.put("diagnostics", new JSONArray());
+      }
+      JSONArray diagnostics = envelope.getJSONArray("diagnostics");
+      diagnostics.put(diagnostic);
+      while (diagnostics.length() > 50) diagnostics.remove(0);
+      atomicWrite(destination, envelope.toString().getBytes(StandardCharsets.UTF_8));
+    } catch (Exception failure) {
+      Log.e(TAG, "cannot publish Lynx diagnostic", failure);
+    }
   }
 
   private void writeAck(long sequence, String graph, String status, String reason) throws Exception {

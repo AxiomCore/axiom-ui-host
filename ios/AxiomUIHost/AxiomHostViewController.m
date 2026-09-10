@@ -2,16 +2,20 @@
 #import "AxiomBundleProvider.h"
 #import "AxiomRuntimeModule.h"
 #import <Lynx/LynxConfig.h>
+#import <Lynx/LynxViewClient.h>
 #import <Lynx/LynxView.h>
 #import <XElement/LynxUIInput.h>
 
-@interface AxiomHostViewController ()
+@interface AxiomHostViewController () <LynxViewLifecycle>
 @property(nonatomic, strong) LynxView *lynxView;
 @property(nonatomic, strong) NSTimer *revisionTimer;
 @property(nonatomic, copy) NSString *lastAppliedRevision;
 @property(nonatomic, assign) CGSize lastPublishedViewportSize;
 @property(nonatomic, assign) UIEdgeInsets lastPublishedSafeAreaInsets;
 @property(nonatomic, assign) BOOL hasPublishedViewport;
+@property(nonatomic, strong) NSNumber *activeSequence;
+@property(nonatomic, copy) NSString *activeGraphRevision;
+@property(nonatomic, assign) NSUInteger diagnosticSequence;
 @end
 
 @implementation AxiomHostViewController
@@ -121,6 +125,12 @@
   // so it must use the explicit, visible full-template fallback rather than
   // silently claim Flutter-style reload semantics.
   self.lastAppliedRevision = identity;
+  self.activeSequence = revision[@"sequence"];
+  self.activeGraphRevision = revision[@"graphRevision"];
+  [[NSFileManager defaultManager]
+      removeItemAtURL:[AxiomHostViewController.axiomSupportDirectory
+                          URLByAppendingPathComponent:@"axiom.app.diagnostic.json"]
+               error:nil];
   NSString *mode = revision[@"deliveryMode"];
   if (![mode isEqualToString:@"state_preserving_patch"] &&
       ![mode isEqualToString:@"state_reset_template"]) {
@@ -166,6 +176,7 @@
   view.enableAutoLayout = YES;
   [self.view addSubview:view];
   self.lynxView = view;
+  [view addLifecycleClient:self];
   [self updateLynxViewport];
   [view loadTemplateFromURL:@"axiom.app.lynx" initData:nil];
   [view triggerLayout];
@@ -175,6 +186,43 @@
                                                        userInfo:nil
                                                         repeats:YES];
   [self pollForRevision];
+}
+
+- (void)lynxView:(LynxView *)view didRecieveError:(NSError *)error {
+  @synchronized(self) {
+    if (self.activeSequence == nil || self.activeGraphRevision.length == 0) return;
+    self.diagnosticSequence += 1;
+    NSDictionary *diagnostic = @{
+      @"id": @(self.diagnosticSequence),
+      @"sequence": self.activeSequence,
+      @"graphRevision": self.activeGraphRevision,
+      @"severity": @"error",
+      @"code": [NSString stringWithFormat:@"LYNX_%ld", (long)error.code],
+      @"message": error.localizedDescription ?: @"Unknown Lynx renderer error",
+    };
+    NSURL *destination = [AxiomHostViewController.axiomSupportDirectory
+        URLByAppendingPathComponent:@"axiom.app.diagnostic.json"];
+    NSData *existingData = [NSData dataWithContentsOfURL:destination];
+    NSDictionary *existing = existingData == nil
+        ? nil
+        : [NSJSONSerialization JSONObjectWithData:existingData options:0 error:nil];
+    NSMutableArray *diagnostics = [NSMutableArray array];
+    if ([existing[@"format"] isEqual:@"axiom-ui-host-diagnostics/v1"] &&
+        [existing[@"diagnostics"] isKindOfClass:NSArray.class]) {
+      [diagnostics addObjectsFromArray:existing[@"diagnostics"]];
+    }
+    [diagnostics addObject:diagnostic];
+    if (diagnostics.count > 50) {
+      [diagnostics removeObjectsInRange:NSMakeRange(0, diagnostics.count - 50)];
+    }
+    NSDictionary *envelope = @{
+      @"format": @"axiom-ui-host-diagnostics/v1",
+      @"diagnostics": diagnostics,
+    };
+    NSData *data = [NSJSONSerialization dataWithJSONObject:envelope options:0 error:nil];
+    if (data == nil) return;
+    [data writeToURL:destination options:NSDataWritingAtomic error:nil];
+  }
 }
 
 - (void)viewDidLayoutSubviews {

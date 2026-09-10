@@ -110,7 +110,9 @@ artifact checksum, then installs only the matching target asset. CI can use
 `--non-interactive`; `--release-manifest` remains available for an explicitly
 supplied local release.
 
-Release `0.3.0` introduces delivery protocol v2. A compatible Acore edit may
+Release `0.3.0` introduced delivery protocol v2. Host release `0.4.9` adds
+protocol v3 capability metadata and the bounded native diagnostic channel used
+by the CLI. A compatible Acore edit may
 request state-preserving patch delivery, but the host must acknowledge the
 result explicitly. The current pinned renderer transport safely returns an
 explained state-reset fallback while it reloads the template inside the
@@ -119,7 +121,7 @@ existing app process; it does not claim that page state was retained. Run
 stuck: it restarts the host and clears its two disposable control records, not
 verified archives, last-good bundle, or application source.
 
-Android has the same fixed `bundle` / `revision` / `ack` v2 protocol under the
+Android has the same fixed `bundle` / `revision` / `ack` v2 transport under the
 host's app-private `files/axiom-ui-host` directory. The CLI selects a running
 Android Emulator, installs the verified APK when needed, and transfers those
 fixed files with `adb run-as`; it does not open the host sandbox to a source
@@ -127,7 +129,9 @@ path or network URL. Set `AXIOM_UI_ANDROID_DEVICE_SERIAL` to select a specific
 authorized development device. The current Android host stays open but
 truthfully reports a full-template state reset. Its renderer callback is
 single-use, so streaming/event-channel parity and physical-device evidence are
-still explicit Phase 5E gates. `axiom ui host recover --target android` clears
+still explicit Phase 5E gates. Both hosts expose renderer diagnostics through
+the v3 host capability, while retaining the v2 delivery record formats.
+`axiom ui host recover --target android` clears
 only its stale control records and relaunches that development host.
 
 The GitHub repository and release assets used by normal CLI users must be

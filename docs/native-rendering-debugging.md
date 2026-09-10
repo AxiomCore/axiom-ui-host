@@ -23,18 +23,32 @@ An acknowledgement proves that the host received and submitted the bundle to
 Lynx. It does not prove that every element has a native implementation or that
 an event handler changed state.
 
+While `axiom run` remains open, the host also publishes a bounded queue of
+asynchronous Lynx diagnostics as `axiom-ui-host-diagnostics/v1`. The CLI
+reports renderer, JavaScript, native component, resource, and layout errors
+associated with the active graph. Use `DEBUG=true axiom run ...` (or
+`AXIOM_UI_DEBUG=true`) to show delivery sequence, full graph revision, fallback
+reasons, and host suggestions. Normal mode intentionally keeps successful
+compile/delivery messages short.
+
+Only diagnostics emitted by Lynx can cross this channel. A platform may not
+classify every visually undesirable layout (for example intentional clipping)
+as an error, so device acceptance tests remain necessary for presentation.
+
 ## 1. Inspect compiler output
 
 The `UI reload` line prints a graph revision. Its opaque generated project is:
 
 ```text
-~/Library/Caches/axiom/ui/builds/<graph-revision>/virtual/
+~/Library/Caches/axiom/ui/builds/<graph-revision>/<target>-<process>/virtual/
 ```
 
 Inspect the page TSX and `axiom-ui.css`. For an Axiom `Input`, confirm that the
 page contains a native `<input>`, `bindinput`, the expected state setter, and
-the input sizing class. For a button, confirm `bindtap` points to the expected
-action. Event callbacks passed through a hook or component boundary must be
+its structural class. For a button, confirm `bindtap` points to the expected
+action. Presentation properties must appear only when authored in Acore; the
+base stylesheet must not invent padding, gaps, colors, radius, or control
+height. Event callbacks passed through a hook or component boundary must be
 marked with Lynx's `background only` directive.
 
 If those are wrong, trace the primitive lowerer and action lowerer in
@@ -96,3 +110,5 @@ the wrong dual-runtime copy.
   register native Input support.
 - Device validation must still type a non-empty value, submit it, and reset it
   on both iOS Simulator and Android Emulator.
+- Run iOS and Android watchers together and edit once; their Rspeedy workspaces
+  must remain isolated under `builds/<graph>/<target>-<process>`.

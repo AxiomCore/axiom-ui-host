@@ -7,7 +7,7 @@
         android:label="Axiom UI Host"
         android:theme="@style/AxiomHostTheme"
         android:usesCleartextTraffic="true">
-        <meta-data android:name="AxiomUIHostProtocolVersion" android:value="2" />
+        <meta-data android:name="AxiomUIHostProtocolVersion" android:value="3" />
         <meta-data android:name="AxiomRuntimeABIVersion" android:value="1" />
         <meta-data android:name="AxiomRuntimeModuleVersion" android:value="1" />
         <meta-data android:name="AxiomRuntimeFacadeProtocolVersion" android:value="1" />
