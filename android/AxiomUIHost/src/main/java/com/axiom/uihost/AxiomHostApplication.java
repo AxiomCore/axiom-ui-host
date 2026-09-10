@@ -2,9 +2,7 @@ package com.axiom.uihost;
 
 import android.app.Application;
 import com.facebook.drawee.backends.pipeline.Fresco;
-import com.lynx.service.http.LynxHttpService;
 import com.lynx.service.image.LynxImageService;
-import com.lynx.service.log.LynxLogService;
 import com.lynx.tasm.LynxEnv;
 import com.lynx.tasm.service.LynxServiceCenter;
 
@@ -14,11 +12,10 @@ public final class AxiomHostApplication extends Application {
     super.onCreate();
 
     // LynxEnv initializes only services that have already been registered.
-    // Register the service implementations linked by this host before init so
-    // every LynxView can resolve image prefetch, fetch, and platform logging.
-    LynxServiceCenter.inst().registerService(LynxLogService.INSTANCE);
+    // Register the image implementation before init so every LynxView can
+    // resolve image rendering and prefetch. Do not activate optional services
+    // unless the host also packages all of their runtime dependencies.
     LynxServiceCenter.inst().registerService(LynxImageService.getInstance());
-    LynxServiceCenter.inst().registerService(LynxHttpService.INSTANCE);
     LynxEnv.inst().init(this, null, null, null);
 
     // LynxImageService delegates decoding and caching to Fresco. Initialize it

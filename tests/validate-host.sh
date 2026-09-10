@@ -111,6 +111,10 @@ grep -q '^package com\.axiom\.uihost;' "$host_dir/android/AxiomUIHost/src/main/j
 grep -q 'registerService(LynxImageService.getInstance())' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostApplication.java"
 grep -q 'Fresco.initialize(getApplicationContext())' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostApplication.java"
 grep -q "implementation 'com.facebook.fresco:fresco:2.3.0'" "$host_dir/android/AxiomUIHost/build.gradle"
+if grep -q 'registerService(LynxHttpService.INSTANCE)' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostApplication.java"; then
+  echo 'axiom-ui-host: do not activate LynxHttpService without packaging its OkHttp runtime' >&2
+  exit 1
+fi
 grep -q '^package com\.axiom\.uihost;' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostActivity.java"
 grep -q 'AxiomUIHostProtocolVersion' "$host_dir/android/AxiomUIHost/src/main/AndroidManifest.xml"
 grep -q 'android:name="AxiomUIHostProtocolVersion" android:value="3"' "$host_dir/android/AxiomUIHost/src/main/AndroidManifest.xml"

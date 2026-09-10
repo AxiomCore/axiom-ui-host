@@ -92,6 +92,17 @@ The resource module is installed for every Lynx page and resolves
 service declares that backend as `compileOnly`. Do not hide `LYNX_32102` in the
 CLI: a missing service would also break real `<image>` rendering and prefetch.
 
+Register only the services whose complete runtime dependency graph is packaged
+by the product host. In particular, `LynxHttpService` constructs an
+`okhttp3.OkHttpClient`; activating that service without adding the OkHttp
+runtime crashes `AxiomHostApplication.onCreate()` before the host can write an
+acknowledgement. The CLI then reports `AXIOM_UI_HOST_ACK_TIMEOUT`, which is a
+secondary symptom. Confirm startup failures with:
+
+```sh
+adb logcat -d -b crash | rg 'dev.axiomcore.uihost|FATAL EXCEPTION|Caused by'
+```
+
 ## 3. Check the iOS native registry
 
 Use the Simulator/Xcode console and search for `Lynx`, `input`, and Axiom host
