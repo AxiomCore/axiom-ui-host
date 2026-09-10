@@ -237,9 +237,9 @@ abis=(arm64-v8a x86_64)
 rust_dir="$cache_base/rust/android-emulator"
 # Cargo owns invalidation for its target directory. Preserve it across Gradle
 # retries; only the staged APK inputs must be refreshed for every build.
-# CMake IMPORTED shared libraries are packaged automatically by AGP 4.1.
-# They must not also live under jniLibs, or mergeNativeLibs receives the same
-# library from both inputs and aborts with a duplicate-path error.
+# The Rust runtime is linked into the JNI bridge as a static archive. Keeping
+# one Android shared object avoids relying on AGP to discover and package a
+# transitive IMPORTED shared library (AGP 4.1 omitted it from released APKs).
 rm -rf "$host_stage/src/main/jniLibs" "$host_stage/src/main/nativeDeps"
 mkdir -p "$rust_dir" "$host_stage/src/main/nativeDeps"
 # cargo-ndk obtains workspace metadata before it forwards arguments to Cargo.
@@ -248,11 +248,19 @@ mkdir -p "$rust_dir" "$host_stage/src/main/nativeDeps"
 # toolchain never depends on a Cargo.toml being present in axiom-ui-host.
 pushd "$runtime_dir" >/dev/null
 for abi in "${abis[@]}"; do
+  case "$abi" in
+    arm64-v8a) rust_target="aarch64-linux-android" ;;
+    x86_64) rust_target="x86_64-linux-android" ;;
+    *) die "unsupported Android runtime ABI: $abi" ;;
+  esac
   # cargo-ndk rejects the renderer's r21 NDK. Limit the newer NDK to this
   # child process; the Gradle environment below remains pinned to r21.
   ANDROID_NDK_HOME="$cargo_ndk_home" ANDROID_NDK_ROOT="$cargo_ndk_home" \
-    CARGO_TARGET_DIR="$rust_dir" cargo ndk -t "$abi" -o "$host_stage/src/main/nativeDeps" \
-    build --release
+    CARGO_TARGET_DIR="$rust_dir" cargo ndk -t "$abi" build --release
+  runtime_archive="$rust_dir/$rust_target/release/libaxiom_runtime.a"
+  [[ -f "$runtime_archive" ]] || die "Axiom runtime static archive was not produced for $abi"
+  mkdir -p "$host_stage/src/main/nativeDeps/$abi"
+  cp "$runtime_archive" "$host_stage/src/main/nativeDeps/$abi/libaxiom_runtime.a"
 done
 popd >/dev/null
 cp "$runtime_dir/include/axiom.h" "$host_stage/src/main/cpp/axiom.h"
@@ -272,9 +280,34 @@ if ! ./gradlew --no-daemon "${gradle_args[@]}"; then
 fi
 popd >/dev/null
 
+llvm_readelf="$(find "$host_ndk_home/toolchains/llvm/prebuilt" -path '*/bin/llvm-readelf' -type f -print -quit)"
+[[ -x "$llvm_readelf" ]] || die "renderer NDK does not provide llvm-readelf for Android runtime verification"
+for abi in "${abis[@]}"; do
+  built_bridge="$host_stage/build/intermediates/cmake/$kind/obj/$abi/libaxiom_runtime_jni.so"
+  [[ -f "$built_bridge" ]] || die "Android build did not produce the Axiom runtime bridge for $abi"
+  dynamic_section="$("$llvm_readelf" -d "$built_bridge")"
+  if grep -Fq 'Shared library: [libaxiom_runtime.so]' <<< "$dynamic_section"; then
+    die "Android $abi bridge still loads libaxiom_runtime.so dynamically; the Rust runtime must be embedded into libaxiom_runtime_jni.so"
+  fi
+done
+
 apk="$host_stage/build/outputs/apk/$kind/axiom_ui_host-$kind.apk"
 [[ -f "$apk" ]] || apk="$(find "$host_stage/build/outputs/apk/$kind" -name '*.apk' -type f -print -quit)"
 [[ -n "$apk" && -f "$apk" ]] || die "Gradle reported success but produced no Android host APK"
+python3 - "$apk" "${abis[@]}" <<'PY'
+import sys, zipfile
+
+apk, *abis = sys.argv[1:]
+with zipfile.ZipFile(apk) as archive:
+    names = set(archive.namelist())
+missing = [f"lib/{abi}/libaxiom_runtime_jni.so" for abi in abis
+           if f"lib/{abi}/libaxiom_runtime_jni.so" not in names]
+if missing:
+    raise SystemExit("Android APK is missing embedded Axiom runtime bridge: " + ", ".join(missing))
+separate_runtime = sorted(name for name in names if name.endswith("/libaxiom_runtime.so"))
+if separate_runtime:
+    raise SystemExit("Android APK unexpectedly depends on a separately packaged Axiom runtime: " + ", ".join(separate_runtime))
+PY
 archive="$output_dir/axiom-ui-host-android-emulator.apk"
 cp "$apk" "$archive"
 printf '%s\n' "axiom-ui-host: built Android emulator development host"

@@ -4,7 +4,7 @@ source "$(cd "$(dirname "$0")" && pwd)/lib.sh"
 
 kind="${1:-}"
 [[ "$kind" == simulator || "$kind" == device ]] || die "usage: build-ios.sh <simulator|device>"
-need rsync; need cargo; need xcodebuild; need xcrun; need pod; need python3; need xcodegen
+need rsync; need cargo; need xcodebuild; need xcrun; need pod; need python3; need xcodegen; need nm; need otool
 if [[ "$kind" == simulator ]] && ! has_ios_simulator_runtime; then
   die "no iOS Simulator runtime is available; run 'just ios-runtime' to install the runtime selected by Xcode"
 fi
@@ -222,6 +222,17 @@ if ! xcodebuild -quiet -workspace "$host_stage/AxiomUIHost.xcworkspace" -scheme 
 fi
 app_path="$(find "$derived/Build/Products" -type d -name '*.app' -print -quit)"
 [[ -n "$app_path" ]] || die "xcodebuild did not produce an app"
+app_executable="$app_path/AxiomUIHost"
+[[ -x "$app_executable" ]] || die "iOS host app is missing its executable"
+runtime_symbols="$(nm -gU "$app_executable")"
+for runtime_symbol in _axiom_abi_version _axiom_initialize _axiom_load_contract_locked _axiom_call _axiom_process_responses; do
+  grep -Fq " $runtime_symbol" <<< "$runtime_symbols" || \
+    die "iOS host executable does not contain the statically embedded runtime symbol $runtime_symbol"
+done
+runtime_dependencies="$(otool -L "$app_executable")"
+if grep -Eq 'libaxiom_runtime|/axiom-runtime/' <<< "$runtime_dependencies"; then
+  die "iOS host must statically embed Axiom Runtime instead of loading it from a build-machine path"
+fi
 archive="$output_dir/axiom-ui-host-ios-$kind.app.zip"
 rm -f "$archive"
 (cd "$(dirname "$app_path")" && ditto -c -k --sequesterRsrc --keepParent "$(basename "$app_path")" "$archive")
