@@ -32,6 +32,10 @@ android-release:
 android-emulator:
   infisical run --env=prod -- ./scripts/build-android.sh release
 
+# Builds the browser shell with Axiom Runtime compiled and embedded as WASM.
+web:
+  ./scripts/build-web.sh
+
 package version:
   ./scripts/package-release.sh "{{version}}"
 

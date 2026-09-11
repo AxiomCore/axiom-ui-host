@@ -10,7 +10,7 @@ clean_stage
 # Package only artifacts created by a host build. The app workspace is never
 # inspected, and renderer source never becomes a release input by accident.
 artifacts=()
-while IFS= read -r artifact; do artifacts+=("$artifact"); done < <(find "$output_dir" -maxdepth 1 -type f \( -name 'axiom-ui-host-ios-*.zip' -o -name 'axiom-ui-host-android-*.apk' \) -print | sort)
+while IFS= read -r artifact; do artifacts+=("$artifact"); done < <(find "$output_dir" -maxdepth 1 -type f \( -name 'axiom-ui-host-ios-*.zip' -o -name 'axiom-ui-host-android-*.apk' -o -name 'axiom-ui-host-web-*.zip' \) -print | sort)
 (( ${#artifacts[@]} > 0 )) || die "no host build artifacts in $output_dir; run a platform build first"
 rm -rf "$dist_dir"
 mkdir -p "$dist_dir"
@@ -24,11 +24,13 @@ for artifact in "$dist_dir"/*; do
   case "$name" in
     axiom-ui-host-ios-*) target=ios ;;
     axiom-ui-host-android-*) target=android ;;
+    axiom-ui-host-web-*) target=web ;;
     *) die "unsupported host artifact name: $name" ;;
   esac
   variant="${name#axiom-ui-host-$target-}"
   variant="${variant%.app.zip}"
   variant="${variant%.apk}"
+  variant="${variant%.zip}"
   printf '%s\t%s\t%s\t%s\n' "$target" "$variant" "$name" "$(sha256 "$artifact")" >> "$assets_file"
 done
 

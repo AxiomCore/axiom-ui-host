@@ -3,6 +3,7 @@ dist/
 *.xcarchive
 *.ipa
 *.apk
+*.wasm
 .DS_Store
 .infisical.json
 # Default local output from scripts/provision-release-secrets.sh. It contains

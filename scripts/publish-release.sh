@@ -55,6 +55,19 @@ git_root="$(git -C "$host_dir" rev-parse --show-toplevel 2>/dev/null || true)"
 git -C "$host_dir" rev-parse --verify HEAD >/dev/null || die "the host repository has no initial commit"
 [[ -z "$(git -C "$host_dir" status --porcelain)" ]] || die "the host source working tree is not clean; commit or stash source changes before releasing"
 
+# The release manifest and CI must identify the exact runtime bytes embedded in
+# every platform host. A dirty sibling checkout or stale workflow pin would
+# produce an artifact whose provenance could not be reproduced.
+runtime_dir="$repo_dir/axiom-runtime"
+[[ "$(git -C "$runtime_dir" rev-parse --show-toplevel 2>/dev/null || true)" == "$runtime_dir" ]] || \
+  die "the Axiom Runtime checkout is missing at $runtime_dir"
+[[ -z "$(git -C "$runtime_dir" status --porcelain)" ]] || \
+  die "the Axiom Runtime working tree is not clean; commit and push the reviewed runtime changes before releasing the UI Host"
+runtime_head="$(git -C "$runtime_dir" rev-parse HEAD)"
+workflow_runtime="$(sed -n 's/^[[:space:]]*RUNTIME_COMMIT:[[:space:]]*//p' "$host_dir/.github/workflows/release.yml" | head -1)"
+[[ "$workflow_runtime" == "$runtime_head" ]] || \
+  die "release workflow runtime pin $workflow_runtime does not match axiom-runtime HEAD $runtime_head; update RUNTIME_COMMIT after publishing the runtime commit"
+
 remote="$(git -C "$host_dir" remote get-url origin 2>/dev/null || true)"
 case "$remote" in
   https://github.com/AxiomCore/axiom-ui-host.git|git@github.com:AxiomCore/axiom-ui-host.git|ssh://git@github.com/AxiomCore/axiom-ui-host.git) ;;
@@ -81,11 +94,12 @@ else
   git -C "$host_dir" fetch --quiet origin main || die "cannot fetch origin/main; the first source publication must use 'just release-initial <version>'"
 fi
 
-printf '%s\n' "axiom-ui-host: validating source and building the iOS and Android development hosts for release $tag."
+printf '%s\n' "axiom-ui-host: validating source and building the iOS, Android, and web development hosts for release $tag."
 "$host_dir/scripts/check.sh"
 "$host_dir/tests/validate-host.sh"
 "$host_dir/scripts/build-ios.sh" simulator
 "$host_dir/scripts/build-android.sh" release
+"$host_dir/scripts/build-web.sh"
 
 # Build output is confined to the opaque host cache. The source tree was
 # checked clean before the build, and must still be clean when we publish it.

@@ -22,6 +22,7 @@ just ios-runtime
 just ios-simulator
 just android-debug
 just android-emulator
+just web
 just package version=0.3.0
 just verify manifest=dist/host-manifest.json
 just release-dry-run version=0.3.0
@@ -102,6 +103,9 @@ axiom run app/main.acore --target ios
 axiom ui host install --target android
 axiom ui host status --target android
 axiom run app/main.acore --target android
+axiom ui host install --target web
+axiom ui host status --target web
+axiom run app/main.acore --target web
 ```
 
 The normal `axiom run` flow asks to install a missing **UI Host**, downloads the
@@ -109,6 +113,17 @@ latest Axiom-owned release automatically, verifies its signed manifest and
 artifact checksum, then installs only the matching target asset. CI can use
 `--non-interactive`; `--release-manifest` remains available for an explicitly
 supplied local release.
+
+The `web` artifact is a static, Axiom-owned browser shell. Its release build
+compiles `axiom-runtime` with `wasm-pack` and packages the resulting WASM and
+JavaScript glue inside `axiom-ui-host-web-browser.zip`; a running application
+never reads an absolute SDK or monorepo path. `axiom run --target web` verifies
+and installs that artifact, starts a loopback-only development server on an
+available port, opens the default browser, and streams valid edits to the open
+page. Compatible edits retain page state; incompatible edits reset it, and an
+invalid edit leaves the last-good page untouched. Browser/runtime failures are
+reported back to the owning CLI session. Set `AXIOM_UI_WEB_PORT` only when a
+stable local port is needed.
 
 Release `0.3.0` introduced delivery protocol v2. Host release `0.4.9` adds
 protocol v3 capability metadata and the bounded native diagnostic channel used
@@ -142,6 +157,12 @@ publicly downloadable. A private GitHub release works only for an authenticated
 maintainer and cannot distribute to end users; never embed a GitHub token in the
 CLI. If the host must remain private, publish its signed assets through an
 Axiom-controlled public distribution endpoint instead.
+
+The browser host includes the runtime allocator fix required by WASM contract
+calls. Publish that `axiom-runtime` source change first, then update
+`RUNTIME_COMMIT` in `.github/workflows/release.yml` to its commit SHA. The local
+release command rejects a dirty runtime checkout or a stale pin so its manifest
+cannot claim provenance for different runtime bytes.
 
 ## Release contract
 
@@ -186,7 +207,7 @@ just release-initial 0.1.0
 ```
 
 It loads signing material only through `infisical run --env=prod`, validates and
-builds the iOS Simulator and signed Android Emulator development hosts, pushes the source commit to `main`, and creates
+builds the iOS Simulator, signed Android Emulator, and WASM-backed browser development hosts, pushes the source commit to `main`, and creates
 the signed immutable GitHub Release `v0.1.0`. Later releases use a new version:
 
 ```sh

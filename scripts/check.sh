@@ -23,6 +23,9 @@ for required in \
   "$host_dir/android/AxiomUIHost/src/main/AndroidManifest.xml"; do
   [[ -f "$required" ]] || die "missing required bridge file: $required"
 done
+for required in "$host_dir/web/index.html" "$host_dir/web/host.css" "$host_dir/web/host.js" "$host_dir/scripts/build-web.sh"; do
+  [[ -f "$required" ]] || die "missing required web host file: $required"
+done
 if find "$host_dir" -type d \( -name node_modules -o -path '*/research/lynx/*' \) -print -quit | grep -q .; then
   die "host project must not vendor engine source or node_modules"
 fi

@@ -14,7 +14,7 @@ permissions:
 env:
   RUNTIME_REPOSITORY: AxiomCore/axiom-runtime
   # Review this ABI-v1 runtime pin together with every host ABI change.
-  RUNTIME_COMMIT: 9cf8fef0052f183d28eaf51659cdf6a9ce359d57
+  RUNTIME_COMMIT: a3d53ce19a3b5f815623faae2dc0cabb71da7614
 
 jobs:
   ios-simulator:
@@ -78,8 +78,28 @@ jobs:
       - uses: actions/upload-artifact@v4
         with: { name: android-host, path: ~/.cache/axiom-ui-host/output/axiom-ui-host-android-emulator.apk }
 
+  web-browser:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with: { path: axiom-ui-host, fetch-depth: 0 }
+      - name: Check out reviewed runtime revision
+        run: |
+          git clone https://github.com/${RUNTIME_REPOSITORY}.git axiom-runtime
+          git -C axiom-runtime checkout --detach "$RUNTIME_COMMIT"
+          test "$(git -C axiom-runtime rev-parse HEAD)" = "$RUNTIME_COMMIT"
+      - uses: dtolnay/rust-toolchain@stable
+        with: { targets: wasm32-unknown-unknown }
+      - name: Build WASM-backed browser host
+        working-directory: axiom-ui-host
+        run: |
+          cargo install wasm-pack --locked
+          ./scripts/build-web.sh
+      - uses: actions/upload-artifact@v4
+        with: { name: web-host, path: ~/.cache/axiom-ui-host/output/axiom-ui-host-web-browser.zip }
+
   release:
-    needs: [ios-simulator, android-emulator]
+    needs: [ios-simulator, android-emulator, web-browser]
     runs-on: ubuntu-24.04
     if: github.event_name == 'push' || inputs.publish
     steps:
@@ -104,4 +124,5 @@ jobs:
           mkdir -p "$AXIOM_UI_HOST_BUILD_ROOT/output"
           cp "$GITHUB_WORKSPACE"/artifacts/ios-host/axiom-ui-host-ios-simulator.app.zip "$AXIOM_UI_HOST_BUILD_ROOT/output/"
           cp "$GITHUB_WORKSPACE"/artifacts/android-host/axiom-ui-host-android-emulator.apk "$AXIOM_UI_HOST_BUILD_ROOT/output/"
+          cp "$GITHUB_WORKSPACE"/artifacts/web-host/axiom-ui-host-web-browser.zip "$AXIOM_UI_HOST_BUILD_ROOT/output/"
           ./scripts/release.sh "$version"

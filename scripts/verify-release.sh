@@ -15,7 +15,7 @@ assert re.fullmatch(r'[0-9a-f]{40}', data['engine']['commit']), 'invalid engine 
 seen = set()
 for asset in data.get('assets', []):
     target, variant, name, digest = asset.get('target'), asset.get('variant'), asset.get('file'), asset.get('sha256')
-    assert target in ('ios', 'android'), 'unknown target'
+    assert target in ('ios', 'android', 'web'), 'unknown target'
     assert re.fullmatch(r'[a-z0-9][a-z0-9-]*', variant or ''), 'invalid variant'
     assert (target, variant) not in seen, 'duplicate target/variant'; seen.add((target, variant))
     assert name and '/' not in name and '\\' not in name, 'unsafe asset name'

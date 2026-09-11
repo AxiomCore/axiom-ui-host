@@ -36,6 +36,8 @@ grep -q 'GitHub Release.*already exists' "$host_dir/scripts/publish-release.sh"
 grep -q 'origin/main does not match HEAD' "$host_dir/scripts/publish-release.sh"
 grep -q 'status --porcelain' "$host_dir/scripts/publish-release.sh"
 grep -q 'AXIOM_UI_HOST_RELEASE_SECRETS_LOADED' "$host_dir/scripts/publish-release.sh"
+grep -q 'release workflow runtime pin' "$host_dir/scripts/publish-release.sh"
+grep -q 'Axiom Runtime working tree is not clean' "$host_dir/scripts/publish-release.sh"
 grep -q '@interface AxiomAppDelegate' "$host_dir/ios/AxiomUIHost/AxiomAppDelegate.h"
 grep -q 'AxiomRuntimeModule' "$host_dir/ios/AxiomUIHost/AxiomHostViewController.m"
 grep -q 'axiom.app.revision.json' "$host_dir/ios/AxiomUIHost/AxiomHostViewController.m"
@@ -95,6 +97,9 @@ if rg -l -i 'lynxexplorer|explorer/' "$host_dir/ios/AxiomUIHost" --glob '*.{h,m,
   exit 1
 fi
 grep -q '^android-emulator:' "$host_dir/justfile"
+grep -q '^web:' "$host_dir/justfile"
+grep -q 'wasm-pack build' "$host_dir/scripts/build-web.sh"
+grep -q 'axiom_runtime_bg.wasm' "$host_dir/web/host.js"
 grep -q 'Android host build troubleshooting' "$host_dir/README.md"
 grep -q 'native UI rendering debugging' "$host_dir/README.md"
 grep -q 'No BehaviorController defined for class input' "$host_dir/docs/native-rendering-debugging.md"
@@ -175,6 +180,7 @@ fi
 mkdir -p "$scratch/build/output"
 touch "$scratch/build/output/axiom-ui-host-ios-simulator.app.zip"
 touch "$scratch/build/output/axiom-ui-host-android-emulator.apk"
+touch "$scratch/build/output/axiom-ui-host-web-browser.zip"
 AXIOM_UI_HOST_BUILD_ROOT="$scratch/build" AXIOM_UI_HOST_DIST_ROOT="$scratch/dist" "$host_dir/scripts/package-release.sh" 0.0.0-validation
 keys="$(cargo run --quiet --manifest-path "$repo_dir/axiom-keygen/Cargo.toml" -- generate)"
 private="$(printf '%s\n' "$keys" | sed -n 's/^AXIOM_UI_HOST_SIGNING_PRIVATE_KEY_HEX=//p')"
@@ -182,15 +188,20 @@ public="$(printf '%s\n' "$keys" | sed -n 's/^AXIOM_UI_HOST_SIGNING_PUBLIC_KEY_HE
 AXIOM_UI_HOST_SIGNING_PRIVATE_KEY_HEX="$private" "$host_dir/scripts/sign-release.sh" "$scratch/dist/host-manifest.json"
 AXIOM_UI_HOST_SIGNING_PUBLIC_KEY_HEX="$public" AXIOM_UI_HOST_DIST_ROOT="$scratch/dist" "$host_dir/scripts/verify-release.sh" "$scratch/dist/host-manifest.json"
 
-AXIOM_UI_HOST_SIGNING_PUBLIC_KEY_HEX="$public" XDG_CACHE_HOME="$scratch/cache" cargo run --quiet --manifest-path "$repo_dir/AxiomCore/cli/Cargo.toml" -- \
+AXIOM_UI_HOST_SIGNING_PUBLIC_KEY_HEX="$public" AXIOM_UI_CACHE_ROOT="$scratch/cache/axiom" cargo run --quiet --manifest-path "$repo_dir/AxiomCore/cli/Cargo.toml" -- \
   ui host install --target ios --variant simulator --non-interactive --release-manifest "$scratch/dist/host-manifest.json" >/dev/null
-status="$(XDG_CACHE_HOME="$scratch/cache" cargo run --quiet --manifest-path "$repo_dir/AxiomCore/cli/Cargo.toml" -- \
+status="$(AXIOM_UI_CACHE_ROOT="$scratch/cache/axiom" cargo run --quiet --manifest-path "$repo_dir/AxiomCore/cli/Cargo.toml" -- \
   ui host status --target ios)"
 [[ "$status" == *'UI Host for ios is set up'* ]]
-AXIOM_UI_HOST_SIGNING_PUBLIC_KEY_HEX="$public" XDG_CACHE_HOME="$scratch/cache" cargo run --quiet --manifest-path "$repo_dir/AxiomCore/cli/Cargo.toml" -- \
+AXIOM_UI_HOST_SIGNING_PUBLIC_KEY_HEX="$public" AXIOM_UI_CACHE_ROOT="$scratch/cache/axiom" cargo run --quiet --manifest-path "$repo_dir/AxiomCore/cli/Cargo.toml" -- \
   ui host install --target android --variant emulator --non-interactive --release-manifest "$scratch/dist/host-manifest.json" >/dev/null
-status="$(XDG_CACHE_HOME="$scratch/cache" cargo run --quiet --manifest-path "$repo_dir/AxiomCore/cli/Cargo.toml" -- \
+status="$(AXIOM_UI_CACHE_ROOT="$scratch/cache/axiom" cargo run --quiet --manifest-path "$repo_dir/AxiomCore/cli/Cargo.toml" -- \
   ui host status --target android)"
 [[ "$status" == *'Installed release: 0.0.0-validation (emulator)'* ]]
+AXIOM_UI_HOST_SIGNING_PUBLIC_KEY_HEX="$public" AXIOM_UI_CACHE_ROOT="$scratch/cache/axiom" cargo run --quiet --manifest-path "$repo_dir/AxiomCore/cli/Cargo.toml" -- \
+  ui host install --target web --variant browser --non-interactive --release-manifest "$scratch/dist/host-manifest.json" >/dev/null
+status="$(AXIOM_UI_CACHE_ROOT="$scratch/cache/axiom" cargo run --quiet --manifest-path "$repo_dir/AxiomCore/cli/Cargo.toml" -- \
+  ui host status --target web)"
+[[ "$status" == *'Installed release: 0.0.0-validation (browser)'* ]]
 
 printf 'axiom-ui-host validation passed: the Axiom-owned host and its release manifest install through the CLI cache.\n'
