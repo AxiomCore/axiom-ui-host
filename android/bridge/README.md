@@ -19,3 +19,8 @@ channel back into the same typed event protocol used on iOS. The APK is an Axiom
 release-key-signed), never a production application distribution. Its JNI
 library is Axiom-built Rust output plus the small Axiom-owned C++ wrapper, not
 a vendor prebuilt binary.
+
+Local dependency configuration stays portable and may use
+`http://127.0.0.1:<port>`. Inside the Android Emulator the bridge translates a
+loopback host to the emulator gateway at `10.0.2.2`. Physical development
+devices keep the original URL and use the CLI-managed `adb reverse` tunnel.

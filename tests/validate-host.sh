@@ -8,6 +8,15 @@ trap 'status=$?; printf "axiom-ui-host: validation failed at line %s: %s (exit %
 host_dir="$(cd "$(dirname "$0")/.." && pwd)"
 repo_dir="$(cd "$host_dir/.." && pwd)"
 scratch="$(mktemp -d)"
+trap 'rm -r "$scratch"' EXIT
+
+# Release validation must follow the configured external build cache. Without
+# this, the two cargo-run integration checks silently fill the source
+# workspace's target directory even though native host builds are external.
+if [[ -n "${AXIOM_UI_HOST_BUILD_ROOT:-}" ]]; then
+  export CARGO_TARGET_DIR="$AXIOM_UI_HOST_BUILD_ROOT/validation/cargo-target"
+  mkdir -p "$CARGO_TARGET_DIR"
+fi
 
 "$host_dir/scripts/check.sh"
 grep -q 'scan-and-mount' "$host_dir/scripts/lib.sh"
@@ -18,6 +27,7 @@ grep -q '^release-initial version:' "$host_dir/justfile"
 grep -q '^release-update version:' "$host_dir/justfile"
 grep -q 'release-build-root' "$host_dir/scripts/publish-release.sh"
 grep -q 'configured external release build cache' "$host_dir/scripts/publish-release.sh"
+grep -q 'CARGO_TARGET_DIR=.*AXIOM_UI_HOST_BUILD_ROOT' "$host_dir/tests/validate-host.sh"
 grep -q 'release-build-image' "$host_dir/scripts/publish-release.sh"
 grep -q 'zero-filled .so files' "$host_dir/scripts/publish-release.sh"
 grep -q 'Sparse bundles are directories' "$host_dir/scripts/publish-release.sh"
@@ -141,6 +151,14 @@ grep -q 'System.loadLibrary("axiom_runtime_jni")' "$host_dir/android/bridge/Axio
 grep -q 'mContext.getFilesDir()' "$host_dir/android/bridge/AxiomRuntimeModule.java"
 grep -q 'nativeLoadContract' "$host_dir/android/bridge/AxiomRuntimeModule.java"
 grep -q '@LynxMethod public void poll' "$host_dir/android/bridge/AxiomRuntimeModule.java"
+grep -q 'initialize(ReadableMap config, Callback callback)' "$host_dir/android/bridge/AxiomRuntimeModule.java"
+grep -q 'JavaOnlyMap dispatch(ReadableMap envelope, Callback callback)' "$host_dir/android/bridge/AxiomRuntimeModule.java"
+grep -q 'JavaOnlyArray.of("query", "mutation", "cancel")' "$host_dir/android/bridge/AxiomRuntimeModule.java"
+grep -q '"10.0.2.2"' "$host_dir/android/bridge/AxiomRuntimeModule.java"
+if grep -Eq '@LynxMethod public (synchronized )?(Map<String, Object>|HashMap)' "$host_dir/android/bridge/AxiomRuntimeModule.java"; then
+  echo 'axiom-ui-host: Android Lynx methods must use ReadableMap/JavaOnlyMap bridge types' >&2
+  exit 1
+fi
 grep -q 'runtime_archive=.*libaxiom_runtime.a' "$host_dir/scripts/build-android.sh"
 grep -q 'Android APK is missing embedded Axiom runtime bridge' "$host_dir/scripts/build-android.sh"
 grep -q 'libaxiom_runtime_jni.so' "$host_dir/scripts/build-android.sh"

@@ -1,11 +1,17 @@
 package com.axiom.uihost;
 
 import android.content.Context;
+import android.os.Build;
 import android.util.Base64;
 import com.lynx.react.bridge.Callback;
+import com.lynx.react.bridge.JavaOnlyArray;
+import com.lynx.react.bridge.JavaOnlyMap;
+import com.lynx.react.bridge.ReadableMap;
 import com.lynx.jsbridge.LynxMethod;
 import com.lynx.jsbridge.LynxModule;
 import java.io.File;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashMap;
 import java.util.List;
@@ -21,7 +27,7 @@ public final class AxiomRuntimeModule extends LynxModule {
   private static final int PROTOCOL = 1;
   private static final int MODULE_VERSION = 1;
   private static final ConcurrentHashMap<String, Operation> ALLOWED = new ConcurrentHashMap<>();
-  private static final ConcurrentLinkedQueue<Map<String, Object>> EVENTS = new ConcurrentLinkedQueue<>();
+  private static final ConcurrentLinkedQueue<JavaOnlyMap> EVENTS = new ConcurrentLinkedQueue<>();
   private static final ScheduledExecutorService PUMP = Executors.newSingleThreadScheduledExecutor(r -> {
     Thread thread = new Thread(r, "axiom-runtime-response-pump");
     thread.setDaemon(true);
@@ -35,19 +41,19 @@ public final class AxiomRuntimeModule extends LynxModule {
   public AxiomRuntimeModule(Context context) { super(context); }
 
   @LynxMethod public void runtimeInfo(Callback callback) {
-    Map<String, Object> result = new HashMap<>();
+    JavaOnlyMap result = new JavaOnlyMap();
     result.put("moduleVersion", MODULE_VERSION);
     result.put("runtimeAbiVersion", nativeAbiVersion());
     result.put("target", "android");
-    result.put("capabilities", new String[] {"query", "mutation", "cancel"});
+    result.put("capabilities", JavaOnlyArray.of("query", "mutation", "cancel"));
     callback.invoke(result);
   }
 
-  @LynxMethod public synchronized void initialize(Map<String, Object> config, Callback callback) {
-    callback.invoke(initializeOnce(config));
+  @LynxMethod public synchronized void initialize(ReadableMap config, Callback callback) {
+    callback.invoke(initializeOnce(config == null ? null : config.asHashMap()));
   }
 
-  private synchronized Map<String, Object> initializeOnce(Map<String, Object> config) {
+  private synchronized JavaOnlyMap initializeOnce(Map<String, Object> config) {
     if (config == null || integer(config.get("protocolVersion")) != PROTOCOL ||
         !(config.get("contracts") instanceof List) || ((List<?>) config.get("contracts")).isEmpty()) {
       return status(2, "AXIOM_UI_RUNTIME_CONFIG: a non-empty protocol-1 contract configuration is required.");
@@ -72,7 +78,7 @@ public final class AxiomRuntimeModule extends LynxModule {
       if (!(candidate instanceof Map)) return status(2, "AXIOM_UI_RUNTIME_CONFIG: invalid contract entry.");
       Map<?, ?> contract = (Map<?, ?>) candidate;
       String namespace = required(contract.get("namespace"));
-      String baseUrl = required(contract.get("baseUrl"));
+      String baseUrl = runtimeBaseUrl(required(contract.get("baseUrl")));
       String encoded = required(contract.get("artifactBase64"));
       String signature = optional(contract.get("signature"));
       String publicKey = optional(contract.get("publicKey"));
@@ -111,18 +117,18 @@ public final class AxiomRuntimeModule extends LynxModule {
     }
     ALLOWED.clear(); ALLOWED.putAll(approved); loadedFingerprint = fingerprint;
     if (!pumpStarted) { pumpStarted = true; PUMP.scheduleWithFixedDelay(AxiomRuntimeModule::nativeProcessResponses, 0, 5, TimeUnit.MILLISECONDS); }
-    Map<String, Object> result = status(0, null);
+    JavaOnlyMap result = status(0, null);
     result.put("verified", allVerified); result.put("loadedContracts", contracts.size());
     return result;
   }
 
-  @LynxMethod public Map<String, Object> dispatch(Map<String, Object> envelope, Callback callback) {
-    Map<String, Object> result = dispatchOnce(envelope);
+  @LynxMethod public JavaOnlyMap dispatch(ReadableMap envelope, Callback callback) {
+    JavaOnlyMap result = dispatchOnce(envelope == null ? null : envelope.asHashMap());
     callback.invoke(result); // acknowledgement only: Lynx Android callbacks are single-use
     return result;
   }
 
-  private Map<String, Object> dispatchOnce(Map<String, Object> envelope) {
+  private JavaOnlyMap dispatchOnce(Map<String, Object> envelope) {
     if (envelope == null || integer(envelope.get("protocolVersion")) != PROTOCOL || !(envelope.get("request") instanceof Map)) {
       return ack(2, "AXIOM_UI_RUNTIME_DISPATCH: invalid facade envelope.");
     }
@@ -147,21 +153,21 @@ public final class AxiomRuntimeModule extends LynxModule {
 
   /** Drains one event because the pinned Lynx Callback implementation is one-shot. */
   @LynxMethod public void poll(Callback callback) {
-    Map<String, Object> event = EVENTS.poll();
+    JavaOnlyMap event = EVENTS.poll();
     callback.invoke(event == null ? status(0, null) : event);
   }
 
-  @LynxMethod public Map<String, Object> cancel(double requestId) {
-    Map<String, Object> result = status(nativeCancel((long) requestId), null);
+  @LynxMethod public JavaOnlyMap cancel(double requestId) {
+    JavaOnlyMap result = status(nativeCancel((long) requestId), null);
     result.put("requestId", (long) requestId); return result;
   }
-  @LynxMethod public synchronized Map<String, Object> close() {
+  @LynxMethod public synchronized JavaOnlyMap close() {
     ALLOWED.clear(); EVENTS.clear(); loadedFingerprint = null; initialized = false;
     return status(nativeClose(), null);
   }
 
   private static void onNativeResponse(long requestId, int eventType, int eventStatus, byte[] data, byte[] error) {
-    Map<String, Object> event = new HashMap<>();
+    JavaOnlyMap event = new JavaOnlyMap();
     event.put("protocolVersion", PROTOCOL); event.put("requestId", requestId);
     event.put("eventType", eventType); event.put("status", eventStatus);
     event.put("data", new String(data, StandardCharsets.UTF_8));
@@ -184,12 +190,36 @@ public final class AxiomRuntimeModule extends LynxModule {
   private static String required(Object value) { return value instanceof String && !((String) value).isEmpty() ? (String) value : null; }
   private static String optional(Object value) { return value instanceof String ? (String) value : null; }
   private static String text(Object value, String fallback) { return value instanceof String ? (String) value : fallback; }
-  private static Map<String, Object> status(int value, String error) {
-    Map<String, Object> result = new HashMap<>(); result.put("status", value);
+  private static JavaOnlyMap status(int value, String error) {
+    JavaOnlyMap result = new JavaOnlyMap(); result.put("status", value);
     if (error != null) result.put("error", error); return result;
   }
-  private static Map<String, Object> ack(int value, String error) {
-    Map<String, Object> result = status(value, error); result.put("accepted", true); return result;
+  private static JavaOnlyMap ack(int value, String error) {
+    JavaOnlyMap result = status(value, error); result.put("accepted", true); return result;
+  }
+  private static String runtimeBaseUrl(String value) {
+    if (value == null || !isAndroidEmulator()) return value;
+    try {
+      URI url = new URI(value);
+      String host = url.getHost();
+      if (!("127.0.0.1".equals(host) || "localhost".equalsIgnoreCase(host) || "::1".equals(host))) {
+        return value;
+      }
+      // 10.0.2.2 is the Android Emulator's stable route to the development
+      // machine. Physical devices retain loopback and use the CLI's adb reverse.
+      return new URI(url.getScheme(), url.getUserInfo(), "10.0.2.2", url.getPort(),
+          url.getPath(), url.getQuery(), url.getFragment()).toString();
+    } catch (URISyntaxException ignored) {
+      return value;
+    }
+  }
+  private static boolean isAndroidEmulator() {
+    String fingerprint = Build.FINGERPRINT == null ? "" : Build.FINGERPRINT;
+    String model = Build.MODEL == null ? "" : Build.MODEL;
+    String hardware = Build.HARDWARE == null ? "" : Build.HARDWARE;
+    return fingerprint.startsWith("generic") || fingerprint.contains("emulator") ||
+        model.contains("Emulator") || model.contains("Android SDK built for") ||
+        hardware.contains("goldfish") || hardware.contains("ranchu");
   }
   private static final class Operation {
     final String method, path, kind;
