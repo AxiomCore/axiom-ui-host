@@ -211,17 +211,20 @@ static void AxiomRuntimeResponse(const AxiomResponseBuffer *response) {
 - (NSDictionary *)cancel:(NSNumber *)requestID { return @{ @"requestId": requestID, @"status": @(axiom_cancel(requestID.unsignedLongLongValue)) }; }
 
 - (NSDictionary *)close {
-  axiom_reset_session();
-  @synchronized(AxiomEvents) { [AxiomEvents removeAllObjects]; }
+  AxiomResetRuntimeSession();
   return @{ @"status": @0 };
 }
 @end
 
+void AxiomResetRuntimeSession(void) {
+  axiom_reset_session();
+  @synchronized(AxiomEvents) { [AxiomEvents removeAllObjects]; }
+}
+
 void AxiomShutdownRuntimeModule(void) {
   if (AxiomResponsePump != nil) { dispatch_source_cancel(AxiomResponsePump); AxiomResponsePump = nil; }
-  axiom_reset_session();
+  AxiomResetRuntimeSession();
   axiom_clear_callback();
-  @synchronized(AxiomEvents) { [AxiomEvents removeAllObjects]; }
   @synchronized(AxiomAllowedEndpoints) { [AxiomAllowedEndpoints removeAllObjects]; }
   AxiomLoadedConfigurationFingerprint = nil;
 }

@@ -141,7 +141,7 @@
   }
   // A replacement template starts request IDs at 1 again. Cancel and drain
   // the previous facade generation before Lynx creates the next one.
-  axiom_reset_session();
+  AxiomResetRuntimeSession();
   [self.lynxView loadTemplateFromURL:@"axiom.app.lynx" initData:nil];
   [self.lynxView triggerLayout];
   if ([mode isEqualToString:@"state_preserving_patch"]) {
