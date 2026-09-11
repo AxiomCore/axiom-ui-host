@@ -113,6 +113,10 @@ public final class AxiomHostActivity extends Activity {
     // Lynx's public byte-template API replaces the page template. A future
     // renderer patch API may acknowledge preserved state, but until it has
     // Android E2E evidence this host reports an honest reset fallback.
+    // The new template creates a fresh facade whose request IDs restart at 1.
+    // Drain the previous generation before replacement so no late callback can
+    // be mistaken for a response owned by the new page.
+    AxiomRuntimeModule.nativeResetSession();
     lynxView.renderTemplate(bundle, Collections.<String, Object>emptyMap());
     String requested = revision.optString("deliveryMode");
     String reason = "state_preserving_patch".equals(requested)

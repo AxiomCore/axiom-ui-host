@@ -128,7 +128,10 @@ stable local port is needed.
 Release `0.3.0` introduced delivery protocol v2. Host release `0.4.9` adds
 protocol v3 capability metadata and the bounded native diagnostic channel used
 by the CLI. Host release `0.5.5` adds Android locked-contract dispatch, automatic
-one-shot response polling, and local HTTP support in the development hosts. A compatible Acore edit may
+one-shot response polling, and local HTTP support in the development hosts.
+Host release `0.6.1` adds the shared cancellation and teardown contract: native
+template replacement resets and drains the previous Runtime generation, while
+the packaged web model disables the development-only event stream. A compatible Acore edit may
 request state-preserving patch delivery, but the host must acknowledge the
 result explicitly. The current pinned renderer transport safely returns an
 explained state-reset fallback while it reloads the template inside the

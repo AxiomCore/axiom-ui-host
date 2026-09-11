@@ -19,6 +19,8 @@ runtime_rustflags="${RUSTFLAGS:-} --remap-path-prefix=$repo_dir=axiom-source --r
 RUSTFLAGS="$runtime_rustflags" wasm-pack build "$runtime_dir" --target no-modules --out-dir "$wasm_stage" --release
 cp "$host_dir/web/index.html" "$host_dir/web/host.css" "$host_dir/web/host.js" "$web_stage/"
 cp "$wasm_stage/axiom_runtime.js" "$wasm_stage/axiom_runtime_bg.wasm" "$web_stage/"
+grep -q 'axiom_wasm_cancel' "$web_stage/axiom_runtime.js" || die "browser runtime is missing cancellation export"
+grep -q 'axiom_wasm_reset_session' "$web_stage/axiom_runtime.js" || die "browser runtime is missing teardown export"
 # no-modules emits a global lexical binding. Publish it deliberately for the
 # host module, matching the proven axiom-sdk browser integration.
 printf '\nwindow.wasm_bindgen = wasm_bindgen;\n' >> "$web_stage/axiom_runtime.js"

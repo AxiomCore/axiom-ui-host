@@ -225,7 +225,7 @@ app_path="$(find "$derived/Build/Products" -type d -name '*.app' -print -quit)"
 app_executable="$app_path/AxiomUIHost"
 [[ -x "$app_executable" ]] || die "iOS host app is missing its executable"
 runtime_symbols="$(nm -gU "$app_executable")"
-for runtime_symbol in _axiom_abi_version _axiom_initialize _axiom_load_contract_locked _axiom_call _axiom_process_responses; do
+for runtime_symbol in _axiom_abi_version _axiom_initialize _axiom_load_contract_locked _axiom_call _axiom_process_responses _axiom_reset_session; do
   grep -Fq " $runtime_symbol" <<< "$runtime_symbols" || \
     die "iOS host executable does not contain the statically embedded runtime symbol $runtime_symbol"
 done

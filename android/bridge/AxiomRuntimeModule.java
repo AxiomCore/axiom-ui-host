@@ -45,7 +45,7 @@ public final class AxiomRuntimeModule extends LynxModule {
     result.put("moduleVersion", MODULE_VERSION);
     result.put("runtimeAbiVersion", nativeAbiVersion());
     result.put("target", "android");
-    result.put("capabilities", JavaOnlyArray.of("query", "mutation", "cancel"));
+    result.put("capabilities", JavaOnlyArray.of("query", "mutation", "stream", "cancel", "teardown"));
     callback.invoke(result);
   }
 
@@ -183,6 +183,7 @@ public final class AxiomRuntimeModule extends LynxModule {
   private static native void nativeProcessResponses();
   private static native int nativeCancel(long requestId);
   private static native int nativeClose();
+  static native void nativeResetSession();
 
   private static String key(String namespace, long endpointId) { return namespace + ":" + endpointId; }
   private static int integer(Object value) { return value instanceof Number ? ((Number) value).intValue() : -1; }

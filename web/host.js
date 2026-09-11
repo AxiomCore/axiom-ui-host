@@ -10,6 +10,7 @@ let statesByPage = new Map();
 let wasm;
 let nextRequestId = 1;
 const pending = new Map();
+let responsePump;
 
 function diagnostic(code, message, severity = "error") {
   console[severity === "warning" ? "warn" : "error"](`[Axiom ${code}] ${message}`);
@@ -97,20 +98,33 @@ async function initializeRuntime(config) {
       } catch (_) {
         failure = new Error(error ? textDecoder.decode(error) : `Runtime status ${status}`);
       }
-      pending.delete(requestId);
-      request.reject(failure);
+      request.failure = failure;
+      request.onError?.(failure);
       return;
     }
-    if ([1, 2, 3, 5].includes(eventType) && data) request.value = JSON.parse(textDecoder.decode(data));
-    // A non-streaming runtime request is terminal on NetworkSuccess. Some
-    // transports also emit Complete; accept that as a fallback for cached or
-    // empty responses without waiting forever for an event that is optional.
-    if (eventType === 1 || eventType === 0) {
+    if (eventType === 5 && data) {
+      const text = textDecoder.decode(data);
+      let chunk;
+      try { chunk = JSON.parse(text); } catch (_) { chunk = text; }
+      request.chunks.push(chunk);
+      request.onChunk?.(chunk);
+      return;
+    }
+    if ([1, 2, 3].includes(eventType) && data) {
+      const text = textDecoder.decode(data);
+      try { request.value = JSON.parse(text); } catch (_) { request.value = text; }
+      return;
+    }
+    // ABI v1 guarantees exactly one Complete event after either success or
+    // Error. Keep failures and stream chunks until that terminal boundary.
+    if (eventType === 0) {
       pending.delete(requestId);
-      request.resolve(request.value);
+      if (request.failure) request.reject(request.failure);
+      else if (status === 15) request.reject(new Error("Axiom request was cancelled."));
+      else request.resolve(request.kind === "stream" ? request.chunks : request.value);
     }
   };
-  setInterval(() => wasm?.axiom_process_responses(), 16);
+  responsePump = setInterval(() => wasm?.axiom_process_responses(), 16);
   const db = allocString("");
   let initialized;
   try {
@@ -139,7 +153,7 @@ async function initializeRuntime(config) {
   }
 }
 
-function callOperation(binding, scope) {
+function callOperation(binding, scope, page) {
   const spec = operations.get(`${binding.contractLocalName}.${binding.operation}`);
   if (!spec) return Promise.reject(new Error(`Unknown verified operation ${binding.operation}`));
   const args = parseRecord(binding.arguments, scope);
@@ -149,13 +163,49 @@ function callOperation(binding, scope) {
   const body = textEncoder.encode(Object.keys(args).length ? JSON.stringify(args) : "");
   const requestId = nextRequestId++;
   return new Promise((resolve, reject) => {
-    pending.set(requestId, { resolve, reject });
+    pending.set(requestId, {
+      resolve, reject, kind: spec.kind, chunks: [], failure: null, page: page.name,
+      onChunk: value => {
+        binding.__state.data = [...binding.__state.data, value];
+        render(false);
+      },
+      onError: error => {
+        binding.__state.error = error;
+        render(false);
+      },
+    });
     const namespace = allocString(spec.contract.namespace), method = allocString(spec.method), requestPath = allocString(path), trace = allocString(""), headers = allocString("");
     const payload = { pointer: allocBytes(body), length: body.length };
     const status = wasm.axiom_wasm_call(requestId, namespace.pointer, namespace.length, spec.endpointId, method.pointer, method.length, requestPath.pointer, requestPath.length, trace.pointer, trace.length, headers.pointer, headers.length, payload.pointer, payload.length);
     [namespace, method, requestPath, trace, headers, payload].forEach(free);
     if (status !== 0) { pending.delete(requestId); reject(new Error(`Axiom runtime rejected request ${requestId} (${status})`)); }
   });
+}
+
+function cancelPendingOperations(reason = "Axiom web runtime was torn down.") {
+  for (const [requestId, request] of pending) {
+    try { wasm?.axiom_wasm_cancel?.(requestId); } catch (_) {}
+    request.reject(new Error(reason));
+  }
+  pending.clear();
+  try { wasm?.axiom_wasm_reset_session?.(); } catch (_) {}
+  if (responsePump) clearInterval(responsePump);
+  responsePump = undefined;
+}
+
+function cancelPageOperations(page) {
+  for (const [requestId, request] of pending) {
+    if (request.page !== page.name) continue;
+    try { wasm?.axiom_wasm_cancel?.(requestId); } catch (_) {}
+    const error = new Error("Axiom operation was cancelled during page teardown.");
+    error.axiomCancelled = true;
+    request.reject(error);
+    pending.delete(requestId);
+  }
+  for (const binding of page.operations) {
+    if (binding.kind !== "mutation") binding.__started = false;
+    if (binding.__state) binding.__state.pending = false;
+  }
 }
 
 function pageScope(page) {
@@ -227,8 +277,16 @@ function renderChildren(children, page, scope) {
 async function runOperation(binding, page) {
   const state = binding.__state;
   state.pending = true; state.error = null; render(false);
-  try { const value = await callOperation(binding, pageScope(page)); state.data = Array.isArray(value) ? value : value == null ? [] : [value]; }
-  catch (error) { state.error = error; diagnostic("WEB_CONTRACT", error.message || String(error)); }
+  try {
+    const value = await callOperation(binding, pageScope(page), page);
+    if (binding.kind !== "stream") state.data = Array.isArray(value) ? value : value == null ? [] : [value];
+  }
+  catch (error) {
+    if (!error.axiomCancelled) {
+      state.error = error;
+      diagnostic("WEB_CONTRACT", error.message || String(error));
+    }
+  }
   finally { state.pending = false; render(false); }
 }
 
@@ -243,8 +301,8 @@ function runAction(page, expression) {
         if (spec?.kind === "mutation") page.operations.filter(candidate => candidate.kind === "query").forEach(query => void runOperation(query, page));
       });
     } else if (step.kind === "state_assign") pageState(page).set(step.state, evaluate(step.expression, pageScope(page)));
-    else if (step.kind === "navigate") { history.push(step.path); currentPath = step.path; window.history.pushState({}, "", step.path); }
-    else if (step.kind === "navigate_back" && history.length > 1) { history.pop(); currentPath = history.at(-1); window.history.back(); }
+    else if (step.kind === "navigate") { cancelPageOperations(page); history.push(step.path); currentPath = step.path; window.history.pushState({}, "", step.path); }
+    else if (step.kind === "navigate_back" && history.length > 1) { cancelPageOperations(page); history.pop(); currentPath = history.at(-1); window.history.back(); }
   }
   render(false);
 }
@@ -254,7 +312,7 @@ function initializePage(page) {
   for (const state of page.states) if (!states.has(state.name)) states.set(state.name, evaluate(state.initializer));
   for (const binding of page.operations) {
     binding.__state ||= { pending: false, data: [], error: null };
-    if (binding.kind === "query" && !binding.__started) { binding.__started = true; queueMicrotask(() => runOperation(binding, page)); }
+    if (binding.kind !== "mutation" && !binding.__started) { binding.__started = true; queueMicrotask(() => runOperation(binding, page)); }
   }
 }
 
@@ -274,14 +332,23 @@ async function load() {
   model.tokens = Object.fromEntries(model.ir.theme.map(token => [`${token.namespace}.${token.name}`, /^\d+(\.\d+)?$/.test(token.value) ? Number(token.value) : unquote(token.value)]));
   await initializeRuntime(model.runtimeConfig);
   render(true);
-  new EventSource("/__axiom/events").addEventListener("reload", async event => {
-    const update = JSON.parse(event.data);
-    if (update.graphRevision === model.graphRevision) return;
-    model = await fetch("/__axiom/app.json", { cache: "no-store" }).then(response => response.json());
-    model.tokens = Object.fromEntries(model.ir.theme.map(token => [`${token.namespace}.${token.name}`, /^\d+(\.\d+)?$/.test(token.value) ? Number(token.value) : unquote(token.value)]));
-    if (!update.preserveState) { location.reload(); return; }
-    render(false);
-  });
+  if (model.hotReload === true) {
+    new EventSource("/__axiom/events").addEventListener("reload", async event => {
+      const update = JSON.parse(event.data);
+      if (update.graphRevision === model.graphRevision) return;
+      model = await fetch("/__axiom/app.json", { cache: "no-store" }).then(response => response.json());
+      model.tokens = Object.fromEntries(model.ir.theme.map(token => [`${token.namespace}.${token.name}`, /^\d+(\.\d+)?$/.test(token.value) ? Number(token.value) : unquote(token.value)]));
+      if (!update.preserveState) { cancelPendingOperations("Axiom web UI reset during hot reload."); location.reload(); return; }
+      render(false);
+    });
+  }
 }
-window.addEventListener("popstate", () => { currentPath = location.pathname; render(false); });
+window.addEventListener("popstate", () => {
+  const current = model.ir.routes.find(candidate => candidate.path === currentPath);
+  const page = model.ir.pages.find(candidate => candidate.name === current?.page);
+  if (page) cancelPageOperations(page);
+  currentPath = location.pathname;
+  render(false);
+});
+window.addEventListener("pagehide", () => cancelPendingOperations());
 load().catch(error => { diagnostic("WEB_BOOT", error.message || String(error)); root.textContent = `Axiom UI failed to start: ${error.message || error}`; });

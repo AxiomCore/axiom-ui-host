@@ -14,7 +14,7 @@ permissions:
 env:
   RUNTIME_REPOSITORY: AxiomCore/axiom-runtime
   # Review this ABI-v1 runtime pin together with every host ABI change.
-  RUNTIME_COMMIT: a3d53ce19a3b5f815623faae2dc0cabb71da7614
+  RUNTIME_COMMIT: 58aa596eb50369b87c41912a7477349feddc023f
 
 jobs:
   ios-simulator:
