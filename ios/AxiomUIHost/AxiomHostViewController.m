@@ -5,6 +5,11 @@
 #import <Lynx/LynxViewClient.h>
 #import <Lynx/LynxView.h>
 #import <XElement/LynxUIInput.h>
+#import <XElement/LynxUITextArea.h>
+#import <XElement/LynxUIOverlay.h>
+#import <XElement/LynxUIBlurView.h>
+#import <XElement/LynxUIWebView.h>
+#import <XElement/LynxUIVideo.h>
 
 @interface AxiomHostViewController () <LynxViewLifecycle>
 @property(nonatomic, strong) LynxView *lynxView;
@@ -49,7 +54,15 @@
     @"safeAreaBottom": @(insets.bottom),
     @"safeAreaLeft": @(insets.left),
     @"isNotchScreen": @((insets.top > 20.0) || (insets.bottom > 0.0)),
+    @"reduceMotion": @(UIAccessibilityIsReduceMotionEnabled()),
   };
+}
+
+- (void)axiomReduceMotionChanged:(NSNotification *)notification {
+  (void)notification;
+  if (self.lynxView != nil) {
+    [self.lynxView updateGlobalPropsWithDictionary:[self axiomGlobalProps]];
+  }
 }
 
 - (void)updateLynxViewport {
@@ -158,6 +171,11 @@
 
 - (void)viewDidLoad {
   [super viewDidLoad];
+  [[NSNotificationCenter defaultCenter]
+      addObserver:self
+         selector:@selector(axiomReduceMotionChanged:)
+             name:UIAccessibilityReduceMotionStatusDidChangeNotification
+           object:nil];
   self.view.backgroundColor = UIColor.systemBackgroundColor;
   LynxView *view = [[LynxView alloc] initWithBuilderBlock:^(LynxViewBuilder *builder) {
     LynxConfig *config = [[LynxConfig alloc] initWithProvider:AxiomBundleProvider.new];
@@ -166,6 +184,13 @@
     // Register both halves: the UIKit view and its custom-measure shadow node.
     [config registerUI:LynxUIInput.class withName:@"input"];
     [config registerShadowNode:LynxUIInputShadowNode.class withName:@"input"];
+    [config registerUI:LynxUITextArea.class withName:@"textarea"];
+    [config registerShadowNode:LynxUITextAreaShadowNode.class withName:@"textarea"];
+    [config registerUI:LynxUIOverlay.class withName:@"overlay"];
+    [config registerShadowNode:LynxUIOverlayShadowNode.class withName:@"overlay"];
+    [config registerUI:LynxUIBlurView.class withName:@"blur-view"];
+    [config registerUI:LynxUIWebView.class withName:@"webview"];
+    [config registerUI:LynxUIVideo.class withName:@"video"];
     builder.config = config;
     builder.screenSize = self.view.bounds.size;
     builder.fontScale = 1.0;
@@ -234,6 +259,7 @@
 }
 
 - (void)dealloc {
+  [[NSNotificationCenter defaultCenter] removeObserver:self];
   [self.revisionTimer invalidate];
   AxiomShutdownRuntimeModule();
 }

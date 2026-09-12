@@ -1,0 +1,10 @@
+{
+  "format": "axiom-lynx-ui-pin/v1",
+  "package": "@lynx-js/lynx-ui",
+  "version": "3.138.0",
+  "sourceRepository": "https://github.com/lynx-family/lynx-ui.git",
+  "sourceCommit": "b9b3fd7a34d7cde6ef4dddfb2fb95de4f5457d73",
+  "npmIntegrity": "sha512-7j1au6sOIHY+lHnM1iR5UcevSPxOzwGM7mbB1H8s3cZeTgWcrnbPgCoPToetjc2vJ6jymk/+hlduXcOlrDHL/A==",
+  "reactLynxPeer": ">=0.100.0",
+  "pinnedReactLynx": "0.107.0"
+}

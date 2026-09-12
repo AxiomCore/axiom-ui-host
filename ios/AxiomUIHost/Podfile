@@ -12,9 +12,13 @@ target 'AxiomUIHost' do
   # supplies the UIImageView factory and SDWebImage decoder used by <image>,
   # including the data: URLs emitted for verified local Axiom assets.
   pod 'LynxService', :path => '../engine', :subspecs => ['Image']
-  # Input is an XElement component, not a Lynx built-in. Keep the dependency
-  # narrow and register it explicitly in AxiomHostViewController.
-  pod 'XElement', :path => '../engine', :subspecs => ['Input']
+  # Link every XElement-backed primitive in the accepted Phase 2 profile.
+  # These are pinned source dependencies compiled into the signed host, not
+  # dynamically downloaded framework code.
+  pod 'XElement', :path => '../engine', :subspecs => [
+    'Input', 'SVG', 'Refresh', 'ViewPager', 'ScrollCoordinator',
+    'Overlay', 'BlurView', 'WebView', 'Video'
+  ]
   # This pinned engine revision declares PrimJS 4.2.0-alpha.0, while the
   # source checkout's development podspec advertises a newer incompatible
   # version. Let Lynx resolve its declared source pod until PrimJS is vendored

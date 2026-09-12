@@ -1,9 +1,11 @@
 package com.axiom.uihost;
 
 import android.app.Activity;
+import android.database.ContentObserver;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
+import android.provider.Settings;
 import android.util.Base64;
 import android.util.Log;
 import android.view.ViewGroup;
@@ -12,18 +14,15 @@ import com.lynx.tasm.LynxError;
 import com.lynx.tasm.LynxView;
 import com.lynx.tasm.LynxViewBuilder;
 import com.lynx.tasm.LynxViewClient;
-import com.lynx.tasm.behavior.Behavior;
-import com.lynx.tasm.behavior.LynxContext;
-import com.lynx.tasm.behavior.shadow.ShadowNode;
-import com.lynx.tasm.behavior.ui.LynxUI;
-import com.lynx.xelement.input.LynxUIInput;
-import com.lynx.xelement.input.LynxUIInputShadowNode;
+import com.lynx.xelement.XElementBehaviors;
 import java.io.File;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Collections;
+import java.util.HashMap;
+import java.util.Map;
 import org.json.JSONArray;
 import org.json.JSONObject;
 
@@ -44,6 +43,24 @@ public final class AxiomHostActivity extends Activity {
   private long activeSequence = 0;
   private String activeGraphRevision = "";
   private long diagnosticSequence = 0;
+  private final ContentObserver animationScaleObserver = new ContentObserver(handler) {
+    @Override public void onChange(boolean selfChange) {
+      if (lynxView != null) lynxView.updateGlobalProps(axiomGlobalProps());
+    }
+  };
+
+  private Map<String, Object> axiomGlobalProps() {
+    Map<String, Object> props = new HashMap<>();
+    float animatorScale = 1.0f;
+    try {
+      animatorScale = Settings.Global.getFloat(
+          getContentResolver(), Settings.Global.ANIMATOR_DURATION_SCALE, 1.0f);
+    } catch (RuntimeException ignored) {
+      // A missing setting is the platform default: motion is enabled.
+    }
+    props.put("reduceMotion", animatorScale == 0.0f);
+    return props;
+  }
 
   private final Runnable watchRevision = new Runnable() {
     @Override public void run() {
@@ -56,18 +73,10 @@ public final class AxiomHostActivity extends Activity {
   @Override public void onCreate(Bundle state) {
     super.onCreate(state);
     LynxViewBuilder builder = new LynxViewBuilder();
-    // Keep Axiom's native primitive surface explicit. Pulling the aggregate
-    // XElement registry would link every optional XElement component merely
-    // to support Input.
-    builder.addBehavior(new Behavior("input", false, false, false) {
-      @Override public LynxUI createUIWithParams(LynxContext context, Object params) {
-        return new LynxUIInput(context, params);
-      }
-
-      @Override public ShadowNode createShadowNode() {
-        return new LynxUIInputShadowNode();
-      }
-    });
+    // XElement's generated registry is part of the host binary. This is not a
+    // dynamic plugin path: the pinned implementations are compiled, signed,
+    // and released with the Axiom UI Host.
+    builder.addBehaviors(new XElementBehaviors().create());
     lynxView = new LynxView(this, builder);
     lynxView.addLynxViewClient(new LynxViewClient() {
       @Override public void onReceivedError(LynxError error) {
@@ -76,10 +85,33 @@ public final class AxiomHostActivity extends Activity {
     });
     setContentView(lynxView, new FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT));
+    getContentResolver().registerContentObserver(
+        Settings.Global.getUriFor(Settings.Global.ANIMATOR_DURATION_SCALE),
+        false,
+        animationScaleObserver);
     handler.post(watchRevision);
   }
 
-  @Override protected void onDestroy() { handler.removeCallbacks(watchRevision); super.onDestroy(); }
+  @Override protected void onDestroy() {
+    handler.removeCallbacks(watchRevision);
+    getContentResolver().unregisterContentObserver(animationScaleObserver);
+    if (lynxView != null) {
+      lynxView.onEnterBackground();
+      lynxView.destroy();
+      lynxView = null;
+    }
+    super.onDestroy();
+  }
+
+  @Override protected void onResume() {
+    super.onResume();
+    if (lynxView != null) lynxView.onEnterForeground();
+  }
+
+  @Override protected void onPause() {
+    if (lynxView != null) lynxView.onEnterBackground();
+    super.onPause();
+  }
 
   private File support() {
     File root = new File(getFilesDir(), "axiom-ui-host");
@@ -117,6 +149,7 @@ public final class AxiomHostActivity extends Activity {
     // Drain the previous generation before replacement so no late callback can
     // be mistaken for a response owned by the new page.
     AxiomRuntimeModule.nativeResetSession();
+    lynxView.updateGlobalProps(axiomGlobalProps());
     lynxView.renderTemplate(bundle, Collections.<String, Object>emptyMap());
     String requested = revision.optString("deliveryMode");
     String reason = "state_preserving_patch".equals(requested)

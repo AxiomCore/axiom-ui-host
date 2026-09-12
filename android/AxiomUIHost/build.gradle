@@ -72,10 +72,12 @@ dependencies {
     implementation 'androidx.annotation:annotation:1.0.0'
     implementation project(':LynxAndroid')
     implementation project(':LynxBase')
-    // Axiom lowers Input to Lynx's native <input>. LynxAndroid does not
-    // register XElement behaviors by itself; the host must link and install
-    // them or rendering aborts with "No BehaviorController ... input".
-    implementation project(':LynxXElement:Input')
+    // The Phase 2 element profile uses XElement-backed input, textarea,
+    // overlay, refresh/paging/coordinator, SVG, blur, WebView, and experimental
+    // video surfaces. Link the aggregate registry so every compiled primitive
+    // has its matching implementation; relying on LynxAndroid alone causes a
+    // runtime "No BehaviorController" failure.
+    implementation project(':LynxXElement')
     implementation project(':lynx_service_log')
     implementation project(':lynx_service_image')
     implementation project(':lynx_service_http')
