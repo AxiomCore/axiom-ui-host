@@ -260,7 +260,19 @@ function renderNode(node, page, scope) {
   if (node.componentName) {
     const component = model.ir.components.find(candidate => candidate.name === node.componentName);
     const props = Object.fromEntries(node.properties.map(property => [property.name, evaluate(property.expression, scope)]));
-    return renderChildren(component?.view || [], page, { ...scope, ...props });
+    if (!component) {
+      diagnostic("WEB_COMPONENT", `Component ${node.componentName} is missing from the delivered UI model.`);
+      return document.createDocumentFragment();
+    }
+    // Match the component boundary emitted by the ReactLynx lowerer. Scoped
+    // selectors deliberately require this ancestor so two components can use
+    // the same authored class name without leaking styles into one another.
+    const boundary = document.createElement("div");
+    boundary.className = `axiom-view axiom-scope-${component.name}`;
+    boundary.dataset.axiomId = node.semanticId.value;
+    boundary.dataset.axiomComponent = component.semanticId.value;
+    boundary.append(renderChildren(component.view || [], page, { ...scope, ...props }));
+    return boundary;
   }
   const properties = Object.fromEntries(node.properties.map(property => [property.name, property.expression]));
   const tags = {
@@ -282,7 +294,11 @@ function renderNode(node, page, scope) {
   const element = document.createElement(tag);
   element.dataset.axiomId = node.semanticId.value;
   const authoredClass = evaluate(properties.class, scope);
-  element.className = [`axiom-${node.primitive.replaceAll("_", "-")}`, typeof authoredClass === "string" ? authoredClass : ""].filter(Boolean).join(" ");
+  const primitiveClasses = [`axiom-${node.primitive.replaceAll("_", "-")}`];
+  // `Scroll` and `ScrollView` share Lynx's scroll-view element. Keep the
+  // canonical selector hook on both Web representations.
+  if (node.primitive === "scroll") primitiveClasses.push("axiom-scroll-view");
+  element.className = [...primitiveClasses, typeof authoredClass === "string" ? authoredClass : ""].filter(Boolean).join(" ");
   const authoredId = evaluate(properties.id, scope);
   if (typeof authoredId === "string" && authoredId) element.id = authoredId;
   Object.assign(element.style, styleFor(node, scope));
