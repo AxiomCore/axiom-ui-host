@@ -94,7 +94,31 @@ grep -q "pod 'LynxBase', :path => '../engine'" "$host_dir/ios/AxiomUIHost/Podfil
 grep -q "pod 'LynxServiceAPI', :path => '../engine'" "$host_dir/ios/AxiomUIHost/Podfile"
 grep -q "pod 'LynxService', :path => '../engine', :subspecs => \['Image'\]" "$host_dir/ios/AxiomUIHost/Podfile"
 grep -q 'required_podspec in Lynx.podspec LynxService.podspec' "$host_dir/scripts/build-ios.sh"
-grep -q "pod 'XElement', :path => '../engine', :subspecs => \['Input'\]" "$host_dir/ios/AxiomUIHost/Podfile"
+python3 - "$host_dir/ios/AxiomUIHost/Podfile" <<'PY'
+import pathlib
+import re
+import sys
+
+podfile = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
+match = re.search(
+    r"pod\s+'XElement'\s*,\s*:path\s*=>\s*'\.\./engine'\s*,\s*:subspecs\s*=>\s*\[(.*?)\]",
+    podfile,
+    re.DOTALL,
+)
+if match is None:
+    raise SystemExit("axiom-ui-host: Podfile must source XElement subspecs from the staged pinned engine")
+
+actual = re.findall(r"['\"]([^'\"]+)['\"]", match.group(1))
+required = [
+    "Input", "SVG", "Refresh", "ViewPager", "ScrollCoordinator",
+    "Overlay", "BlurView", "WebView", "Video",
+]
+if actual != required:
+    raise SystemExit(
+        "axiom-ui-host: XElement subspecs must exactly match the accepted Phase 2 profile; "
+        f"expected {required}, found {actual}"
+    )
+PY
 grep -q 'registerUI:LynxUIInput.class withName:@"input"' "$host_dir/ios/AxiomUIHost/AxiomHostViewController.m"
 grep -q 'registerShadowNode:LynxUIInputShadowNode.class withName:@"input"' "$host_dir/ios/AxiomUIHost/AxiomHostViewController.m"
 if rg -l -i 'lynxexplorer|explorer/' "$host_dir/ios/AxiomUIHost" --glob '*.{h,m,yml}' --glob 'Podfile' >/dev/null; then
@@ -139,9 +163,9 @@ grep -q 'axiom-ui-host-android-emulator.apk' "$host_dir/scripts/build-android.sh
 grep -q "project(':AxiomUIHost')" "$host_dir/android/AxiomUIHost/settings.gradle.fragment"
 grep -q 'version CMAKE_VERSION' "$host_dir/android/AxiomUIHost/build.gradle"
 grep -q "implementation 'androidx.annotation:annotation:1.0.0'" "$host_dir/android/AxiomUIHost/build.gradle"
-grep -q "implementation project(':LynxXElement:Input')" "$host_dir/android/AxiomUIHost/build.gradle"
-grep -q 'new Behavior("input"' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostActivity.java"
-grep -q 'new LynxUIInputShadowNode()' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostActivity.java"
+grep -q "implementation project(':LynxXElement')" "$host_dir/android/AxiomUIHost/build.gradle"
+grep -q 'import com.lynx.xelement.XElementBehaviors;' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostActivity.java"
+grep -q 'builder.addBehaviors(new XElementBehaviors().create())' "$host_dir/android/AxiomUIHost/src/main/java/com/axiom/uihost/AxiomHostActivity.java"
 grep -q '^cmake_minimum_required(VERSION 3\.18\.1)$' "$host_dir/android/bridge/CMakeLists.txt"
 grep -Fq '../nativeDeps/${ANDROID_ABI}/libaxiom_runtime.a' "$host_dir/android/bridge/CMakeLists.txt"
 grep -q 'add_library(axiom_runtime STATIC IMPORTED)' "$host_dir/android/bridge/CMakeLists.txt"
