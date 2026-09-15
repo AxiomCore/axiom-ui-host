@@ -9,6 +9,7 @@ import android.provider.Settings;
 import android.util.Base64;
 import android.util.Log;
 import android.view.ViewGroup;
+import android.view.inputmethod.InputMethodManager;
 import android.widget.FrameLayout;
 import com.lynx.tasm.LynxError;
 import com.lynx.tasm.LynxView;
@@ -148,6 +149,7 @@ public final class AxiomHostActivity extends Activity {
     // The new template creates a fresh facade whose request IDs restart at 1.
     // Drain the previous generation before replacement so no late callback can
     // be mistaken for a response owned by the new page.
+    clearInputFocusForTemplateReplacement();
     AxiomRuntimeModule.nativeResetSession();
     lynxView.updateGlobalProps(axiomGlobalProps());
     lynxView.renderTemplate(bundle, Collections.<String, Object>emptyMap());
@@ -157,6 +159,17 @@ public final class AxiomHostActivity extends Activity {
         : revision.optString("fallbackReason", "native template reload");
     writeAck(sequence, graph, "applied_state_reset", reason);
     seenRevision = identity;
+  }
+
+  private void clearInputFocusForTemplateReplacement() {
+    android.view.View focused = getCurrentFocus();
+    if (focused != null) {
+      InputMethodManager keyboard =
+          (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+      if (keyboard != null) keyboard.hideSoftInputFromWindow(focused.getWindowToken(), 0);
+      focused.clearFocus();
+    }
+    if (lynxView != null) lynxView.clearFocus();
   }
 
   private synchronized void publishDiagnostic(LynxError error) {

@@ -15,6 +15,8 @@ let renderCleanups = [];
 let initializedCollections = new Set();
 let overlayVisibility = new Map();
 let overlayFocusOrigins = new Map();
+let completedLoadEvents = new Set();
+let deferredEventRender = null;
 const reducedMotionQuery = matchMedia("(prefers-reduced-motion: reduce)");
 
 function applyStylesheet() {
@@ -36,7 +38,17 @@ function diagnostic(code, message, severity = "error") {
     body: JSON.stringify({ severity, code, message, graphRevision: model?.graphRevision || "" }),
   }).catch(() => {});
 }
-window.addEventListener("error", event => diagnostic("WEB_RUNTIME", event.message));
+function isBenignResizeObserverError(message) {
+  return message === "ResizeObserver loop limit exceeded" ||
+    message === "ResizeObserver loop completed with undelivered notifications.";
+}
+window.addEventListener("error", event => {
+  if (isBenignResizeObserverError(event.message)) {
+    event.preventDefault();
+    return;
+  }
+  diagnostic("WEB_RUNTIME", event.message);
+});
 window.addEventListener("unhandledrejection", event => diagnostic("WEB_PROMISE", String(event.reason?.message || event.reason)));
 
 function unquote(value) {
@@ -309,11 +321,19 @@ function renderNode(node, page, scope) {
     element.append(renderChildren(node.children, page, scope));
   }
   else if (node.primitive === "image") {
-    element.src = evaluate(properties.source, scope);
     element.alt = properties.decorative === "true" ? "" : unquote(properties.alt);
-    if (properties.placeholder) element.style.backgroundImage = `url("${evaluate(properties.placeholder, scope)}")`;
     const modes = { scaleToFill: "fill", aspectFit: "contain", aspectFill: "cover", center: "none" };
     if (modes[unquote(properties.mode)]) element.style.objectFit = modes[unquote(properties.mode)];
+    if (properties.placeholder) {
+      element.style.backgroundImage = `url("${evaluate(properties.placeholder, scope)}")`;
+      element.style.backgroundPosition = "center";
+      element.style.backgroundRepeat = "no-repeat";
+      element.style.backgroundSize = element.style.objectFit === "cover" ? "cover" : "contain";
+      element.addEventListener("load", () => element.style.removeProperty("background-image"), { once: true });
+    }
+    // Register placeholder cleanup before assigning src so a memory/disk-cache
+    // hit cannot fire load first and leave the placeholder visible forever.
+    element.src = evaluate(properties.source, scope);
   }
   else if (node.primitive === "svg") {
     element.setAttribute("role", properties.decorative === "true" ? "presentation" : "img");
@@ -323,7 +343,7 @@ function renderNode(node, page, scope) {
       const image = document.createElement("img");
       image.src = evaluate(properties.source, scope);
       image.alt = properties.decorative === "true" ? "" : unquote(properties.alt);
-      image.addEventListener("load", () => runAction(page, properties.on_load));
+      image.addEventListener("load", () => runLoadActionOnce(element, image.currentSrc || image.src, page, properties.on_load));
       element.append(image);
     }
   }
@@ -383,6 +403,10 @@ function renderIteratedChildren(element, node, properties, page, scope) {
     cell.className = `axiom-${node.primitive.replaceAll("_", "-")}-item`;
     cell.dataset.itemKey = String(key);
     cell.dataset.reuseIdentifier = String(evaluate(properties.item_reuse_identifier, itemScope) || "default");
+    // A single-axis List owns overflow along its main axis. Flex items shrink
+    // by default, which otherwise compresses every cell into the viewport and
+    // leaves the list with no scroll range.
+    cell.style.flexShrink = "0";
     cell.style.contentVisibility = "auto";
     if (properties.item_estimated_main_axis_size_px) {
       cell.style.containIntrinsicSize = `${Number(evaluate(properties.item_estimated_main_axis_size_px, itemScope)) || 0}px`;
@@ -506,6 +530,24 @@ function bindDisclosureComponent(element, node, properties, page, scope) {
   const trigger = element.querySelector(`:scope > .axiom-${primitive}-trigger`);
   const close = element.querySelector(`.axiom-${primitive}-close`);
   const backdrop = element.querySelector(`.axiom-${primitive}-backdrop`);
+  if (view && (primitive === "dialog" || primitive === "sheet")) {
+    // Dialog and Sheet are viewport disclosures on the native component host.
+    // Mirror that structural contract on Web while leaving visible paint,
+    // dimensions, and spacing on authored content classes.
+    view.style.position = "fixed";
+    view.style.inset = "0";
+    const content = view.querySelector(`:scope > .axiom-${primitive}-content`);
+    if (backdrop) {
+      backdrop.style.position = "absolute";
+      backdrop.style.inset = "0";
+    }
+    if (content) {
+      content.style.position = "absolute";
+      content.style.left = "0";
+      content.style.right = "0";
+      if (primitive === "sheet") content.style.bottom = "0";
+    }
+  }
   const stateAction = properties.on_show_change || properties.on_visible_change;
   const setOpen = next => {
     assignControlledState(page, properties.show, next, stateAction);
@@ -589,6 +631,13 @@ function bindOverlayBehavior(element, node, properties, page, scope) {
   const previous = overlayVisibility.get(node.semanticId.value);
   overlayVisibility.set(node.semanticId.value, visible);
   element.hidden = !visible;
+  // Overlay is a viewport primitive on the native hosts. Do not make callers
+  // restate that contract with authored width/height: a fixed element with
+  // only `position: fixed` otherwise shrink-wraps its children on Web.
+  element.style.position = "fixed";
+  element.style.inset = "0";
+  element.style.width = "100vw";
+  element.style.height = "100vh";
   element.setAttribute("role", "dialog");
   element.setAttribute("aria-modal", "true");
   if (properties.accessibility_label) element.setAttribute("aria-label", unquote(properties.accessibility_label));
@@ -607,7 +656,10 @@ function bindOverlayBehavior(element, node, properties, page, scope) {
     });
     return;
   }
-  const touch = () => properties.on_overlay_touch && runAction(page, properties.on_overlay_touch);
+  // Pointerdown precedes a descendant button's click. Apply the authored
+  // state now but defer replacing the DOM until activation completes, or a
+  // Close button can disappear between pointerdown and click.
+  const touch = () => properties.on_overlay_touch && runAction(page, properties.on_overlay_touch, true);
   const keydown = event => {
     if (event.key !== "Tab") return;
     const focusable = [...element.querySelectorAll("button,input,textarea,select,a[href],[tabindex]")]
@@ -652,7 +704,11 @@ function bindInputBehavior(element, node, properties, page, scope) {
     const maxLines = Number(evaluate(properties.max_lines, scope));
     if (Number.isInteger(maxLines) && maxLines > 0) element.rows = maxLines;
     const lineSpacing = Number(evaluate(properties.line_spacing, scope));
-    if (Number.isFinite(lineSpacing)) element.style.lineHeight = `${lineSpacing}px`;
+    // Native XElement treats line-spacing as space added between the font's
+    // normal line boxes. CSS line-height is the complete line box, so using
+    // the authored value directly makes small spacing values crush text and
+    // makes the three targets disagree.
+    if (Number.isFinite(lineSpacing)) element.style.lineHeight = `calc(1em + ${lineSpacing}px)`;
   }
   let composing = false;
   const setBoundState = (property, value) => {
@@ -685,8 +741,18 @@ function bindInputBehavior(element, node, properties, page, scope) {
     if (!event.isComposing && !composing) render(false);
   });
   add("select", () => { updateSelection(); if (properties.on_selection) runAction(page, properties.on_selection); });
-  add("focus", () => { setBoundState("focused", true); if (properties.on_focus) runAction(page, properties.on_focus); });
-  add("blur", () => { setBoundState("focused", false); if (properties.on_blur) runAction(page, properties.on_blur); });
+  add("focus", () => {
+    if (element.__axiomRestoringFocus) return;
+    setBoundState("focused", true);
+    if (properties.on_focus) runAction(page, properties.on_focus, true);
+  });
+  add("blur", () => {
+    setBoundState("focused", false);
+    // A synchronous full-tree render during mousedown removes the button that
+    // is about to receive click. Apply the authored focus state immediately,
+    // but defer only its visual render until the complete pointer activation.
+    if (properties.on_blur) runAction(page, properties.on_blur, true);
+  });
   add("keydown", event => {
     if (event.key === "Enter" && (!multiline || properties.confirm_type)) {
       if (properties.on_confirm) runAction(page, properties.on_confirm);
@@ -705,6 +771,7 @@ function bindCollectionBehavior(element, node, properties, page, scope) {
   collectionProperties.initial_scroll_index ??= properties.initial_index;
   collectionProperties.initial_select_index ??= properties.initial_index;
   collectionProperties.on_content_size_changed ??= properties.on_content_size_change;
+  const firstInitialization = !initializedCollections.has(node.semanticId.value);
   if (["scroll", "scroll_view", "list", "view_pager", "scroll_coordinator_slot"].includes(collectionPrimitive)) {
     const horizontal = unquote(collectionProperties.scroll_orientation) === "horizontal" || collectionPrimitive === "view_pager";
     element.style.overflowX = evaluate(collectionProperties.enable_scroll, scope) === false ? "hidden" : (horizontal ? "auto" : "hidden");
@@ -743,6 +810,17 @@ function bindCollectionBehavior(element, node, properties, page, scope) {
     const onScroll = () => {
       const now = performance.now();
       const offset = horizontal ? element.scrollLeft : element.scrollTop;
+      // Restoring offsets after a state-only render is not a user or method
+      // scroll. In particular, treating a restored pager offset as a change
+      // recursively rerenders the page and can reset the initiating action.
+      if (element.__axiomRestoringScroll) {
+        previous = offset;
+        if (collectionPrimitive === "view_pager" && element.clientWidth > 0) {
+          const itemWidth = Number(evaluate(properties.item_width, scope)) || element.clientWidth;
+          pagerIndex = Math.round(element.scrollLeft / itemWidth);
+        }
+        return;
+      }
       const throttle = Math.max(0, Number(evaluate(properties.scroll_event_throttle, scope)) || 0);
       if (!scrolling && properties.on_scroll_state_change) runAction(page, properties.on_scroll_state_change);
       if (!scrolling && primitive === "swiper" && properties.on_swipe_start) runAction(page, properties.on_swipe_start);
@@ -787,7 +865,7 @@ function bindCollectionBehavior(element, node, properties, page, scope) {
     };
     element.addEventListener("scroll", onScroll, { passive: true });
     renderCleanups.push(() => { clearTimeout(scrollEndTimer); element.removeEventListener("scroll", onScroll); });
-    if (!initializedCollections.has(node.semanticId.value)) {
+    if (firstInitialization) {
       initializedCollections.add(node.semanticId.value);
       queueMicrotask(() => {
         if (collectionPrimitive === "view_pager") element.scrollLeft = pagerIndex * (Number(evaluate(properties.item_width, scope)) || element.clientWidth);
@@ -804,7 +882,10 @@ function bindCollectionBehavior(element, node, properties, page, scope) {
       const observer = new ResizeObserver(() => runAction(page, collectionProperties.on_content_size_changed));
       observer.observe(element); renderCleanups.push(() => observer.disconnect());
     }
-    if (collectionPrimitive === "list" && properties.on_layout_complete) queueMicrotask(() => runAction(page, properties.on_layout_complete));
+    // A state-only rerender does not represent a new collection layout. Firing
+    // layout-complete for every replacement caused a render loop and erased
+    // method effects scheduled by the initiating action.
+    if (collectionPrimitive === "list" && properties.on_layout_complete && firstInitialization) queueMicrotask(() => runAction(page, properties.on_layout_complete));
     if (primitive === "feed_list" && properties.on_refresh) {
       const refresh = event => {
         if (element.scrollTop <= 0 && event.deltaY < 0) runAction(page, properties.on_refresh);
@@ -813,6 +894,9 @@ function bindCollectionBehavior(element, node, properties, page, scope) {
     }
   }
   if (primitive === "refresh") {
+    element.__axiomRefreshAction = properties.on_start_refresh;
+    element.__axiomRefreshStateAction = properties.on_refresh_state_change;
+    element.__axiomRefreshPage = page;
     let startY = null;
     const down = event => { if (evaluate(properties.enable_refresh, scope) !== false) startY = event.clientY; };
     const move = event => {
@@ -870,10 +954,13 @@ function bindCoreEvents(element, properties, page) {
     on_animation_start: "animationstart", on_animation_end: "animationend",
     on_animation_cancel: "animationcancel", on_animation_iteration: "animationiteration",
     on_transition_start: "transitionstart", on_transition_end: "transitionend",
-    on_transition_cancel: "transitioncancel", on_load: "load", on_error: "error",
+    on_transition_cancel: "transitioncancel", on_error: "error",
   };
   for (const [property, event] of Object.entries(events)) {
     if (properties[property]) element.addEventListener(event, () => runAction(page, properties[property]));
+  }
+  if (properties.on_load) {
+    element.addEventListener("load", () => runLoadActionOnce(element, element.currentSrc || element.src, page, properties.on_load));
   }
   if (properties.on_long_press) {
     let timer;
@@ -898,13 +985,21 @@ function bindCoreEvents(element, properties, page) {
   if (properties.on_selection_change) {
     const listener = () => {
       const selection = window.getSelection();
-      if (selection && (element.contains(selection.anchorNode) || element.contains(selection.focusNode))) {
+      if (selection && !selection.isCollapsed && (element.contains(selection.anchorNode) || element.contains(selection.focusNode))) {
         runAction(page, properties.on_selection_change);
       }
     };
     document.addEventListener("selectionchange", listener);
     renderCleanups.push(() => document.removeEventListener("selectionchange", listener));
   }
+}
+
+function runLoadActionOnce(element, source, page, expression) {
+  if (!expression) return;
+  const key = `${element.dataset.axiomId || ""}\u0000${source || ""}`;
+  if (completedLoadEvents.has(key)) return;
+  completedLoadEvents.add(key);
+  runAction(page, expression);
 }
 
 function renderChildren(children, page, scope) {
@@ -929,10 +1024,11 @@ async function runOperation(binding, page) {
   finally { state.pending = false; render(false); }
 }
 
-function runAction(page, expression) {
+function runAction(page, expression, deferRender = false) {
   const action = page.actions.find(candidate => candidate.name === expression);
   if (!action) return;
   let needsRender = false;
+  const pendingInvocations = [];
   for (const step of action.steps) {
     if (step.kind === "operation_run") {
       const binding = page.operations.find(candidate => candidate.name === step.operation);
@@ -949,9 +1045,26 @@ function runAction(page, expression) {
     }
     else if (step.kind === "navigate") { cancelPageOperations(page); history.push(step.path); currentPath = step.path; window.history.pushState({}, "", step.path); needsRender = true; }
     else if (step.kind === "navigate_back" && history.length > 1) { cancelPageOperations(page); history.pop(); currentPath = history.at(-1); window.history.back(); needsRender = true; }
-    else if (step.kind === "node_invoke") invokeElementMethod(step, page);
+    // State changes replace the Web DOM tree. Invoke methods on the final
+    // mounted element so scrolling, pager selection, and refresh state are not
+    // discarded by the same action's render.
+    else if (step.kind === "node_invoke") pendingInvocations.push(step);
   }
-  if (needsRender) render(false);
+  if (needsRender && deferRender) {
+    if (deferredEventRender === null) {
+      deferredEventRender = setTimeout(() => {
+        deferredEventRender = null;
+        render(false);
+      }, 0);
+    }
+  } else if (needsRender) {
+    if (deferredEventRender !== null) {
+      clearTimeout(deferredEventRender);
+      deferredEventRender = null;
+    }
+    render(false);
+  }
+  pendingInvocations.forEach(step => invokeElementMethod(step, page));
 }
 
 function invokeElementMethod(step, page) {
@@ -1000,7 +1113,12 @@ function invokeElementMethod(step, page) {
       break;
     }
     case "get_visible_cells": [...element.children].filter(child => { const item = child.getBoundingClientRect(), bounds = element.getBoundingClientRect(); return item.bottom > bounds.top && item.top < bounds.bottom && item.right > bounds.left && item.left < bounds.right; }); break;
-    case "auto_start_refresh": element.dataset.refreshing = "true"; break;
+    case "auto_start_refresh": {
+      element.dataset.refreshing = "true";
+      if (element.__axiomRefreshStateAction) runAction(element.__axiomRefreshPage, element.__axiomRefreshStateAction);
+      if (element.__axiomRefreshAction) runAction(element.__axiomRefreshPage, element.__axiomRefreshAction);
+      break;
+    }
     case "finish_refresh": {
       element.dataset.refreshing = "false";
       element.style.removeProperty("--axiom-refresh-offset");
@@ -1013,7 +1131,25 @@ function invokeElementMethod(step, page) {
     case "blur": element.blur(); break;
     case "focus": element.focus({ preventScroll: false }); break;
     case "get_value": ({ value: element.value, selectionStart: element.selectionStart, selectionEnd: element.selectionEnd, isComposing: false }); break;
-    case "set_selection_range": element.setSelectionRange(Number(params.selection_start) || 0, Number(params.selection_end) || 0); break;
+    case "set_selection_range": {
+      // The generated cross-platform method payload uses the native XElement
+      // spellings. Keep the legacy snake_case fallback so older cached bundles
+      // continue to work with a newer Web host.
+      const start = Number(params.selectionStart ?? params.selection_start) || 0;
+      const end = Number(params.selectionEnd ?? params.selection_end) || 0;
+      // A method button has already taken browser focus by the time its click
+      // handler runs. Restore focus to the editable control before applying
+      // selection, then reapply after the click's default focus work settles.
+      element.focus({ preventScroll: true });
+      element.setSelectionRange(start, end);
+      queueMicrotask(() => {
+        if (!element.isConnected) return;
+        element.focus({ preventScroll: true });
+        element.setSelectionRange(start, end);
+        element.dispatchEvent(new Event("select", { bubbles: true }));
+      });
+      break;
+    }
     case "set_value": {
       element.value = String(params.value ?? "");
       element.dispatchEvent(new InputEvent("input", { bubbles: true, inputType: "insertReplacementText", data: null }));
@@ -1033,7 +1169,7 @@ function initializePage(page) {
 }
 
 function render(resetState) {
-  if (resetState) { statesByPage = new Map(); initializedCollections = new Set(); overlayVisibility = new Map(); overlayFocusOrigins = new Map(); }
+  if (resetState) { statesByPage = new Map(); initializedCollections = new Set(); overlayVisibility = new Map(); overlayFocusOrigins = new Map(); completedLoadEvents = new Set(); }
   // Keep teardown for the currently mounted tree separate from listeners and
   // observers registered while constructing its replacement. Clearing one
   // shared array after construction silently detached every new component.
@@ -1058,16 +1194,29 @@ function render(resetState) {
   root.replaceChildren(shell);
   for (const element of root.querySelectorAll("[data-axiom-id]")) {
     const position = scrollPositions.get(element.dataset.axiomId);
-    if (position) { element.scrollLeft = position[0]; element.scrollTop = position[1]; }
+    if (position) {
+      element.__axiomRestoringScroll = true;
+      element.scrollLeft = position[0];
+      element.scrollTop = position[1];
+      requestAnimationFrame(() => { element.__axiomRestoringScroll = false; });
+    }
   }
   if (active) {
     const input = [...root.querySelectorAll("input[data-axiom-id], textarea[data-axiom-id]")]
       .find(element => element.dataset.axiomId === active.semanticId);
     if (input) {
+      // Restoring focus after the DOM swap is host bookkeeping, not a new
+      // authored focus event. Suppress the listener so it cannot recursively
+      // render before the saved selection has been restored.
+      input.__axiomRestoringFocus = true;
+      if (Number.isInteger(active.selectionStart) && Number.isInteger(active.selectionEnd)) {
+        input.setSelectionRange(active.selectionStart, active.selectionEnd);
+      }
       input.focus({ preventScroll: true });
       if (Number.isInteger(active.selectionStart) && Number.isInteger(active.selectionEnd)) {
         input.setSelectionRange(active.selectionStart, active.selectionEnd);
       }
+      input.__axiomRestoringFocus = false;
     } else {
       const focused = [...root.querySelectorAll("[data-axiom-id]")]
         .find(element => element.dataset.axiomId === active.semanticId);

@@ -68,7 +68,7 @@ for name in excluded:
         re.MULTILINE | re.DOTALL,
     )
     text, count = pattern.subn("", text, count=1)
-    if count != 1:
+    if count == 0 and name in text:
         raise SystemExit(f"could not remove excluded upstream dependency: {name}")
 open(path, "w", encoding="utf-8").write(text)
 PY
@@ -170,6 +170,73 @@ for required_podspec in Lynx.podspec LynxService.podspec; do
     die "upstream source bootstrap completed without $required_podspec; inspect $engine_stage for the generator failure"
   fi
 done
+
+# Lynx marks textarea's UITextView as an authored accessibility element. On
+# iOS 18.1 and newer, custom accessibility elements must explicitly forward
+# text operations to their backing UITextInput or the Simulator/VoiceOver
+# bridge exposes the editable textarea as static text. Apply the compatibility
+# shim only to the opaque pinned-engine build copy.
+textarea_source="$engine_stage/platform/darwin/ios/lynx_xelement/input/LynxUITextArea.m"
+python3 - "$textarea_source" <<'PY'
+import pathlib, sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+needle = "  textView.delegate = self;\n  textView.secureTextEntry = NO;\n"
+replacement = """  textView.delegate = self;
+  if (@available(iOS 18.1, *)) {
+    textView.accessibilityTextInputResponder = textView;
+  }
+  textView.secureTextEntry = NO;
+"""
+if replacement not in text:
+    if needle not in text:
+        raise SystemExit(f"unexpected textarea initialization layout in {path}")
+    path.write_text(text.replace(needle, replacement, 1), encoding="utf-8")
+PY
+
+# XElement 4.3 reports a dismiss transition the first time an authored-hidden
+# overlay is laid out because UIView starts visible before the `visible=false`
+# property is applied. Preserve genuine show/dismiss transitions while
+# suppressing only that synthetic initial dismissal in the opaque pinned copy.
+overlay_source="$engine_stage/platform/darwin/ios/lynx_xelement/overlay/LynxUIOverlay.m"
+python3 - "$overlay_source" <<'PY'
+import pathlib, sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+property_needle = "@property(nonatomic, assign) BOOL willBecomeVisible;\n"
+property_replacement = property_needle + "\n@property(nonatomic, assign) BOOL hasPresented;\n"
+if property_replacement not in text:
+    if property_needle not in text:
+        raise SystemExit(f"unexpected overlay property layout in {path}")
+    text = text.replace(property_needle, property_replacement, 1)
+event_needle = '''  if (self.view.hidden != !self.visible) {
+    LynxCustomEvent *event =
+        [[LynxDetailEvent alloc] initWithName:self.visible ? @"showoverlay" : @"dismissoverlay"
+                                   targetSign:[self sign]
+                                       detail:nil];
+    [self.context.eventEmitter dispatchCustomEvent:event];
+  }
+'''
+event_replacement = '''  if (self.view.hidden != !self.visible) {
+    BOOL shouldDispatchLifecycleEvent = self.visible || self.hasPresented;
+    if (self.visible) self.hasPresented = YES;
+    if (shouldDispatchLifecycleEvent) {
+      LynxCustomEvent *event =
+          [[LynxDetailEvent alloc] initWithName:self.visible ? @"showoverlay" : @"dismissoverlay"
+                                     targetSign:[self sign]
+                                         detail:nil];
+      [self.context.eventEmitter dispatchCustomEvent:event];
+    }
+  }
+'''
+if event_replacement not in text:
+    if event_needle not in text:
+        raise SystemExit(f"unexpected overlay lifecycle layout in {path}")
+    text = text.replace(event_needle, event_replacement, 1)
+path.write_text(text, encoding="utf-8")
+PY
 
 runtime_dir="$repo_dir/axiom-runtime"
 [[ -f "$runtime_dir/Cargo.toml" ]] || die "Axiom runtime not found at $runtime_dir"

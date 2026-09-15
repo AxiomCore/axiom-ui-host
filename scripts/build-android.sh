@@ -213,6 +213,26 @@ fi
 [[ -f "$tools_shared_gn_args" && -f "$tools_shared_cmake_generator" ]] || \
   die "Android renderer tools are incomplete after dependency sync; retry just android-emulator"
 
+# The pinned XElement coordinator probes both the pre-AndroidX and current
+# Material private field names. A missing legacy name is an expected fallback,
+# but upstream prints the caught exception to stderr on every programmatic
+# expand. Keep the compatibility fallback while suppressing only that expected
+# stack trace in the opaque build copy.
+coordinator_source="$engine_stage/platform/android/lynx_xelement/lynx_xelement_scroll_coordinator/src/main/java/com/lynx/xelement/scroll/coordinator/ScrollCoordinatorAppBarLayout.java"
+python3 - "$coordinator_source" <<'PY'
+import pathlib, sys
+
+path = pathlib.Path(sys.argv[1])
+text = path.read_text(encoding="utf-8")
+needle = "} catch (NoSuchFieldException e) {\n        e.printStackTrace();\n"
+replacement = "} catch (NoSuchFieldException e) {\n"
+if needle in text:
+    text = text.replace(needle, replacement)
+    path.write_text(text, encoding="utf-8")
+elif replacement not in text:
+    raise SystemExit(f"unexpected coordinator exception layout in {path}")
+PY
+
 host_stage="$engine_stage/explorer/android/axiom_ui_host"
 rm -rf "$host_stage"
 mkdir -p "$host_stage"
@@ -233,7 +253,11 @@ fi
 runtime_dir="$repo_dir/axiom-runtime"
 [[ -f "$runtime_dir/Cargo.toml" && -f "$runtime_dir/include/axiom.h" ]] || die "Axiom runtime sources are missing beside the host repository"
 
-abis=(arm64-v8a x86_64)
+if [[ -n "${AXIOM_UI_HOST_ANDROID_ABIS:-}" ]]; then
+  IFS=',' read -r -a abis <<< "$AXIOM_UI_HOST_ANDROID_ABIS"
+else
+  abis=(arm64-v8a x86_64)
+fi
 rust_dir="$cache_base/rust/android-emulator"
 # Cargo owns invalidation for its target directory. Preserve it across Gradle
 # retries; only the staged APK inputs must be refreshed for every build.

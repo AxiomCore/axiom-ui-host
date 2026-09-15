@@ -70,6 +70,9 @@ dependencies {
     // Lynx's annotation dependency is compileOnly, but its generated registry
     // imports @Keep directly, so the application must provide it to javac.
     implementation 'androidx.annotation:annotation:1.0.0'
+    // XElement's pager implementation instantiates ViewPager2 at runtime but
+    // the pinned aggregate module does not publish that transitive dependency.
+    implementation 'androidx.viewpager2:viewpager2:1.0.0'
     implementation project(':LynxAndroid')
     implementation project(':LynxBase')
     // The Phase 2 element profile uses XElement-backed input, textarea,

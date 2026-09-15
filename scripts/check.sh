@@ -15,6 +15,10 @@ assert components['package'] == '@lynx-js/lynx-ui'
 assert components['version'] == '3.138.0'
 assert components['sourceCommit'] == 'b9b3fd7a34d7cde6ef4dddfb2fb95de4f5457d73'
 assert components['npmIntegrity'] == 'sha512-7j1au6sOIHY+lHnM1iR5UcevSPxOzwGM7mbB1H8s3cZeTgWcrnbPgCoPToetjc2vJ6jymk/+hlduXcOlrDHL/A=='
+assert components['pinnedReactLynx'] == '0.123.1'
+assert components['reactRsbuildPlugin'] == '0.18.1'
+assert components['rspeedy'] == '0.16.1'
+assert components['lynxTypes'] == '4.1.0'
 assert manifest['format'] == 'axiom-ui-host-release/v1'
 assert lock['engine']['commit'] == manifest['engine']['commit']
 PY

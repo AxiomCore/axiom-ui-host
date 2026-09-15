@@ -2,14 +2,51 @@
 #import "AxiomBundleProvider.h"
 #import "AxiomRuntimeModule.h"
 #import <Lynx/LynxConfig.h>
+#import <Lynx/LynxComponentRegistry.h>
 #import <Lynx/LynxViewClient.h>
 #import <Lynx/LynxView.h>
 #import <XElement/LynxUIInput.h>
 #import <XElement/LynxUITextArea.h>
 #import <XElement/LynxUIOverlay.h>
+#import <XElement/LynxOverlayContainer.h>
 #import <XElement/LynxUIBlurView.h>
 #import <XElement/LynxUIWebView.h>
 #import <XElement/LynxUIVideo.h>
+#import <XElement/LynxUISVG.h>
+#import <XElement/LynxUIRefresh.h>
+#import <XElement/LynxUIRefreshHeader.h>
+#import <XElement/LynxUIRefreshShadowNode.h>
+#import <XElement/LynxUIViewPager.h>
+#import <XElement/LynxUIViewPagerItem.h>
+#import <XElement/LynxUIScrollCoordinator.h>
+#import <XElement/LynxUIScrollCoordinatorHeader.h>
+#import <XElement/LynxUIScrollCoordinatorToolbar.h>
+#import <XElement/LynxUIScrollCoordinatorSlot.h>
+
+// XElement creates an overlay container as visible before it applies the
+// authored `visible` property. That transient default emits a false initial
+// dismiss event. Start the UIKit container hidden, matching Acore's default,
+// and re-arm overlay touch recognition after the container has joined its
+// window (the upstream first attempt can occur while `self.view.window` is
+// still nil).
+@interface AxiomUIOverlay : LynxUIOverlay
+@end
+
+@implementation AxiomUIOverlay
+- (UIView *)createView {
+  UIView *view = [super createView];
+  view.hidden = YES;
+  return view;
+}
+
+- (void)eventDidSet {
+  [super eventDidSet];
+  dispatch_async(dispatch_get_main_queue(), ^{
+    LynxOverlayContainer *container = (LynxOverlayContainer *)self.view;
+    if (container.window != nil) [container enableTouchOverlayEvent:YES];
+  });
+}
+@end
 
 @interface AxiomHostViewController () <LynxViewLifecycle>
 @property(nonatomic, strong) LynxView *lynxView;
@@ -22,6 +59,30 @@
 @property(nonatomic, copy) NSString *activeGraphRevision;
 @property(nonatomic, assign) NSUInteger diagnosticSequence;
 @end
+
+// Lynx and XElement are static pods in this host. In the pinned toolchain,
+// duplicate Objective-C class symbols can make the scope registry's
+// isSubclassOfClass guard reject a valid XElement class. Resolve the live
+// runtime class and put it into the config-owned scope used by LynxUIOwner.
+static void AxiomRegisterRuntimeUI(LynxConfig *config, NSString *className,
+                                   NSString *elementName) {
+  id scope = [config valueForKey:@"componentRegistry"];
+  id uiClasses = [scope valueForKey:@"uiClasses"];
+  Class componentClass = NSClassFromString(className);
+  if (uiClasses != nil && componentClass != Nil) {
+    [uiClasses setObject:componentClass forKey:elementName];
+  }
+}
+
+static void AxiomRegisterRuntimeShadowNode(LynxConfig *config, NSString *className,
+                                           NSString *elementName) {
+  id scope = [config valueForKey:@"componentRegistry"];
+  id shadowNodeClasses = [scope valueForKey:@"shadowNodeClasses"];
+  Class componentClass = NSClassFromString(className);
+  if (shadowNodeClasses != nil && componentClass != Nil) {
+    [shadowNodeClasses setObject:componentClass forKey:elementName];
+  }
+}
 
 @implementation AxiomHostViewController
 
@@ -154,6 +215,7 @@
   }
   // A replacement template starts request IDs at 1 again. Cancel and drain
   // the previous facade generation before Lynx creates the next one.
+  [self.view endEditing:YES];
   AxiomResetRuntimeSession();
   [self.lynxView loadTemplateFromURL:@"axiom.app.lynx" initData:nil];
   [self.lynxView triggerLayout];
@@ -177,8 +239,10 @@
              name:UIAccessibilityReduceMotionStatusDidChangeNotification
            object:nil];
   self.view.backgroundColor = UIColor.systemBackgroundColor;
+  __block LynxConfig *hostConfig = nil;
   LynxView *view = [[LynxView alloc] initWithBuilderBlock:^(LynxViewBuilder *builder) {
     LynxConfig *config = [[LynxConfig alloc] initWithProvider:AxiomBundleProvider.new];
+    hostConfig = config;
     AxiomInstallRuntimeModule(config);
     // <input> is supplied by XElement rather than Lynx's built-in registry.
     // Register both halves: the UIKit view and its custom-measure shadow node.
@@ -186,11 +250,23 @@
     [config registerShadowNode:LynxUIInputShadowNode.class withName:@"input"];
     [config registerUI:LynxUITextArea.class withName:@"textarea"];
     [config registerShadowNode:LynxUITextAreaShadowNode.class withName:@"textarea"];
-    [config registerUI:LynxUIOverlay.class withName:@"overlay"];
+    [config registerUI:AxiomUIOverlay.class withName:@"overlay"];
     [config registerShadowNode:LynxUIOverlayShadowNode.class withName:@"overlay"];
+    [config registerUI:LynxUISVG.class withName:@"svg"];
     [config registerUI:LynxUIBlurView.class withName:@"blur-view"];
     [config registerUI:LynxUIWebView.class withName:@"webview"];
     [config registerUI:LynxUIVideo.class withName:@"video"];
+    // Static XElement subspecs can be dead-stripped before their lazy
+    // registries run. Register the complete Phase 2H hierarchy explicitly.
+    [config registerUI:LynxUIRefresh.class withName:@"refresh"];
+    [config registerShadowNode:LynxUIRefreshShadowNode.class withName:@"refresh"];
+    [config registerUI:LynxUIRefreshHeader.class withName:@"refresh-header"];
+    [config registerUI:LynxUIViewPager.class withName:@"viewpager"];
+    [config registerUI:LynxUIViewPagerItem.class withName:@"viewpager-item"];
+    [config registerUI:LynxUIScrollCoordinator.class withName:@"scroll-coordinator"];
+    [config registerUI:LynxUIScrollCoordinatorHeader.class withName:@"scroll-coordinator-header"];
+    [config registerUI:LynxUIScrollCoordinatorToolbar.class withName:@"scroll-coordinator-toolbar"];
+    [config registerUI:LynxUIScrollCoordinatorSlot.class withName:@"scroll-coordinator-slot"];
     builder.config = config;
     builder.screenSize = self.view.bounds.size;
     builder.fontScale = 1.0;
@@ -206,27 +282,51 @@
   self.lynxView = view;
   [view addLifecycleClient:self];
   [self updateLynxViewport];
-  [view loadTemplateFromURL:@"axiom.app.lynx" initData:nil];
-  [view triggerLayout];
   self.revisionTimer = [NSTimer scheduledTimerWithTimeInterval:0.25
                                                          target:self
                                                        selector:@selector(pollForRevision)
                                                        userInfo:nil
                                                         repeats:YES];
-  [self pollForRevision];
+  // Static XElement classes finish runtime realization after LynxView returns.
+  // Defer the first template load one main-loop turn, register into the live
+  // config scope, and only then allow the revision poll to load UI content.
+  dispatch_async(dispatch_get_main_queue(), ^{
+    AxiomRegisterRuntimeUI(hostConfig, @"AxiomUIOverlay", @"overlay");
+    AxiomRegisterRuntimeUI(hostConfig, @"LynxUIRefresh", @"refresh");
+    AxiomRegisterRuntimeShadowNode(hostConfig, @"LynxUIRefreshShadowNode", @"refresh");
+    AxiomRegisterRuntimeUI(hostConfig, @"LynxUIRefreshHeader", @"refresh-header");
+    AxiomRegisterRuntimeUI(hostConfig, @"LynxUIViewPager", @"viewpager");
+    AxiomRegisterRuntimeUI(hostConfig, @"LynxUIViewPagerItem", @"viewpager-item");
+    AxiomRegisterRuntimeUI(hostConfig, @"LynxUIScrollCoordinator", @"scroll-coordinator");
+    AxiomRegisterRuntimeUI(hostConfig, @"LynxUIScrollCoordinatorHeader",
+                           @"scroll-coordinator-header");
+    AxiomRegisterRuntimeUI(hostConfig, @"LynxUIScrollCoordinatorToolbar",
+                           @"scroll-coordinator-toolbar");
+    AxiomRegisterRuntimeUI(hostConfig, @"LynxUIScrollCoordinatorSlot",
+                           @"scroll-coordinator-slot");
+    // The revision record is published after its bundle and is the sole
+    // authority for initial delivery. Loading here and again in the poll
+    // creates two page generations and can route teardown lifecycle events
+    // from the first overlay into the second page.
+    [self pollForRevision];
+  });
 }
 
 - (void)lynxView:(LynxView *)view didRecieveError:(NSError *)error {
   @synchronized(self) {
     if (self.activeSequence == nil || self.activeGraphRevision.length == 0) return;
     self.diagnosticSequence += 1;
+    NSString *message = error.localizedDescription ?: @"Unknown Lynx renderer error";
+    if (error.userInfo.count > 0) {
+      message = [NSString stringWithFormat:@"%@ | %@", message, error.userInfo.description];
+    }
     NSDictionary *diagnostic = @{
       @"id": @(self.diagnosticSequence),
       @"sequence": self.activeSequence,
       @"graphRevision": self.activeGraphRevision,
       @"severity": @"error",
       @"code": [NSString stringWithFormat:@"LYNX_%ld", (long)error.code],
-      @"message": error.localizedDescription ?: @"Unknown Lynx renderer error",
+      @"message": message,
     };
     NSURL *destination = [AxiomHostViewController.axiomSupportDirectory
         URLByAppendingPathComponent:@"axiom.app.diagnostic.json"];

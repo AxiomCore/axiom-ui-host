@@ -6,5 +6,12 @@
   "sourceCommit": "b9b3fd7a34d7cde6ef4dddfb2fb95de4f5457d73",
   "npmIntegrity": "sha512-7j1au6sOIHY+lHnM1iR5UcevSPxOzwGM7mbB1H8s3cZeTgWcrnbPgCoPToetjc2vJ6jymk/+hlduXcOlrDHL/A==",
   "reactLynxPeer": ">=0.100.0",
-  "pinnedReactLynx": "0.107.0"
+  "pinnedReactLynx": "0.123.1",
+  "reactLynxIntegrity": "sha512-wgkSly8Nv3O6tdWJ5tc+dgUHp+XpPzJdOy36dPA1np9LXUEWfwkiWs6BBkluPv620c6tyev2Vj3cEjnGHs0orw==",
+  "reactRsbuildPlugin": "0.18.1",
+  "reactRsbuildPluginIntegrity": "sha512-c+ekAagAocry6NjQMIyn67CN++fU8pStM+9khWfM2ioL/j4zL0jePiuV49gBvLBCErayOrMRB2+/IrokhnIBkw==",
+  "rspeedy": "0.16.1",
+  "rspeedyIntegrity": "sha512-E8FVmglBIfpyZ7AuBlB4Nl+H99uO5F+Hx35HHYW7ySuB/gFxh2+JNx9z5ll1CvfK76ePQmVdsB99ZnVobBPV1w==",
+  "lynxTypes": "4.1.0",
+  "lynxTypesIntegrity": "sha512-WLWnMpGZMrjffSR62PYesSfjD0RWumPyT21iMTi7GySGkOSOGdv4q4wWkarg8zNI7SxcCFM6kpXFhyIERADBPQ=="
 }
